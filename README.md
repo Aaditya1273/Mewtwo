@@ -55,7 +55,7 @@ ARGUS sits as a **governed MCP server** between any MCP client (Claude Web, Clau
 | Metric | Value | Mechanism |
 |---|---|---|
 | Tool-call interception latency | Sub-millisecond overhead | In-process middleware on `/api/v1/mcp/bearer` |
-| Governance plugins active | 9 / 9 by default | Zero-config rule engine |
+| Governance plugins active | 9 + 5 DataHub metadata-aware (when configured) | Zero-config rule engine + optional DataHub context |
 | Live agent state propagation | < 1s to Mission Control UI | Gorilla WebSocket broadcast |
 | OAuth 2.1 handshake | 8-step PKCE (S256) flow | RFC 9207–compliant discovery |
 | Cost-firewall granularity | Per-session, per-tool-call | Budget accumulator, $5–$100 tiers |
@@ -82,15 +82,20 @@ flowchart TB
         MCP["MCP Server<br/>/api/v1/mcp · /mcp/bearer"]
         WS["WebSocket Gateway<br/>/api/v1/argus/ws"]
         REST["REST API<br/>/api/v1/argus/*"]
-        GOV["Governance Engine<br/>9 detection plugins"]
+        GOV["Governance Engine<br/>9 plugins + 5 DataHub-aware"]
         COST["Cost Firewall<br/>per-session budget accumulator"]
         DNA["Agent DNA<br/>Z-score anomaly scoring"]
         REPLAY["Prompt Replay<br/>real OpenAI call"]
         TEL["OTel TracerProvider"]
+        DH["DataHub MCP Client<br/>metadata-aware plugins"]
     end
 
     subgraph Obs["Observability"]
         SIGNOZ["SigNoz Cloud<br/>OTLP/HTTP ingest"]
+    end
+
+    subgraph DHub["DataHub Context Platform"]
+        DHS["DataHub MCP Server<br/>catalog · lineage · tags"]
     end
 
     subgraph UI["ARGUS Dashboard :3000 (Next.js 15/16)"]
@@ -98,6 +103,7 @@ flowchart TB
         MC_UI["Mission Control"]
         GOV_UI["Governance"]
         DNA_UI["Agent DNA"]
+        DH_UI["DataHub Context"]
         PLUG_UI["Plugins"]
         REPLAY_UI["Replay"]
     end
@@ -120,8 +126,14 @@ flowchart TB
     REST --> CF_UI
     REST --> GOV_UI
     REST --> DNA_UI
+    REST --> DH_UI
     REST --> PLUG_UI
     REPLAY --> REPLAY_UI
+
+    GOV -->|"ownership · lineage-PII · policy · quality · deprecation"| DH
+    DH -->|"MCP tools: search / get_lineage / add_tags"| DHS
+    DHS -->|"context graph"| DH
+    DH -->|"audit tags: ARGUS_ALLOW / WARN / BLOCK"| DHS
 
     style Backend fill:#1a1a2e,color:#fff,stroke:#ea580c
     style Obs fill:#2d1b00,color:#fff,stroke:#ea580c
@@ -213,6 +225,7 @@ Rather than delegating identity to a third party, ARGUS runs its own in-process 
 | **LLM Integration** | OpenAI `gpt-4o-mini` (Prompt Replay) | Real re-execution for trace diffing, gated behind `ARGUS_LLM_API_KEY` |
 | **Protocol** | Model Context Protocol `2024-11-05` | Standardized tool-call contract between agent and control plane |
 | **Python SDK** | `argus-sdk` (pip-installable) | `@argus.enforce` decorator for non-MCP agent instrumentation |
+| **Data Context** | DataHub MCP Server (MCP client) | Metadata-aware governance: ownership, lineage-PII, GDPR/HIPAA policy, quality, deprecation + audit write-back |
 | **Testing** | Go `testing`, Python `pytest`, Playwright | Unit, integration, and E2E coverage across backend and dashboard |
 | **Deployment** | Docker, `docker-compose.prod.yaml`, Railway, Render, Netlify | Multi-target deploy for backend container + static/edge frontend |
 
@@ -228,20 +241,25 @@ Argus/
 ├── pkg/
 │   └── query-service/
 │       └── argus/           # Governance engine, cost firewall, telemetry, OAuth AS
+│           ├── engine/      # 9 detection plugins + ContextAwareDetector
+│           ├── datahub/     # DataHub MCP client + 5 metadata-aware plugins + write-back
 │           └── telemetry/   # OTel tracer bootstrap → SigNoz Cloud
-├── frontend/                 # Next.js 15/16 dashboard (Cost Firewall, Mission Control, DNA…)
+├── frontend/                 # Next.js 15/16 dashboard (Cost Firewall, Mission Control, DNA, DataHub…)
 ├── argus-sdk/                 # pip-installable Python SDK (@argus.enforce)
 ├── agent-skills/              # MCP agent skill definitions
+├── examples/datahub/          # DataHub setup guide + seed_metadata.py (demo tags)
 ├── deploy/                    # Deployment manifests (Railway / Render / Docker)
 ├── demo/                       # verify.py — 20-check real end-to-end verification
 ├── docs/                        # Architecture & protocol documentation
 ├── tests/                        # Unit, integration (pytest) & E2E (Playwright) suites
 ├── integrations/                  # Third-party connector glue
+├── SELF_HOSTING.md                # Self-host guide: Docker Compose, DataHub wiring, production
 ├── .env.example                    # Required environment variables (see below)
 ├── docker-compose.prod.yaml         # Production container topology
 ├── Dockerfile                        # Backend multi-stage build (Go 1.24-alpine)
 ├── SECURITY.md                        # Vulnerability disclosure policy
-└── LICENSE
+├── LICENSE                             # Upstream SigNoz license
+└── LICENSE-APACHE                      # Apache 2.0 (hackathon open-source requirement)
 ```
 
 ---
@@ -289,6 +307,11 @@ ARGUS_LLM_API_KEY="sk-..."
 # ARGUS_CLICKHOUSE_DSN=""           # persistent storage backend (optional)
 # ARGUS_WEBHOOK_URL=""              # generic incident webhook
 # SLACK_WEBHOOK_URL=""              # Slack incident notifications
+
+# --- DataHub metadata-aware governance (optional) ---
+# DATAHUB_MCP_URL="https://<tenant>.acryl.io/integrations/ai/mcp"
+# DATAHUB_TOKEN="<datahub personal access token>"
+# DATAHUB_MUTATION_ENABLED="true"   # enables audit write-back (add_tags)
 ```
 
 ### 2 — Start the backend
@@ -452,6 +475,19 @@ See [`examples/datahub/README.md`](examples/datahub/README.md) for the full
 setup guide, and run `examples/datahub/seed_metadata.py` to seed demo
 PII/deprecated tags for an end-to-end walkthrough.
 
+### The demo moment (write-back)
+
+1. An agent calls `datahub_access_dataset` on a dataset whose upstream lineage
+   contains a `PII`-tagged table.
+2. ARGUS walks the lineage, the **Lineage-Aware PII** plugin fires `KILL_RUN`,
+   and the tool call fails *before the agent sees any data*.
+3. ARGUS writes an `ARGUS_BLOCK` audit tag back to DataHub via `add_tags` and
+   streams the decision to the dashboard's Governance Event Log.
+
+This "contributes back to the graph" behavior is exactly what the DataHub
+Agent Hackathon rubric rewards: most submissions read metadata; ARGUS also
+writes governance decisions to it.
+
 ---
 
 ## 🧪 Testing & Verification
@@ -523,6 +559,16 @@ cd tests/e2e && npm install && npx playwright test
 - [ ] Multi-tenant org/RBAC support for the OAuth AS
 - [ ] Token-level (not just call-level) real LLM cost accounting
 - [ ] Claude-native Prompt Replay (in addition to OpenAI)
+
+---
+
+## 📜 License
+
+Dual-licensed:
+
+- [`LICENSE`](./LICENSE) — upstream SigNoz license (base platform)
+- [`LICENSE-APACHE`](./LICENSE-APACHE) — **Apache 2.0** for the ARGUS layer and
+  this repository's original code (hackathon open-source requirement)
 
 ---
 

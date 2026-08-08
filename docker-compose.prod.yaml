@@ -1,0 +1,73 @@
+version: "3.8"
+
+# ── ARGUS — self-hosted deployment ─────────────────────────────────────────
+# Starts the Go backend (REST/MCP/OAuth/WebSocket) and the Next.js dashboard.
+#
+#   docker compose -f docker-compose.prod.yaml up --build
+#
+# Then open http://localhost:3000 (dashboard) and connect Claude to
+# http://localhost:8080/api/v1/mcp.
+#
+# Optional: uncomment the DataHub block below and set DATAHUB_MCP_URL /
+# DATAHUB_TOKEN to enable metadata-aware governance against a DataHub MCP
+# server (Acryl Cloud or self-hosted).
+
+services:
+  argus-control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: argus/control-plane:v1.0.0
+    container_name: argus-control-plane
+    restart: always
+    ports:
+      - "8080:8080" # REST API, MCP & WebSockets
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    environment:
+      - ARGUS_ENV=production
+      - ARGUS_LOG_LEVEL=info
+      # Uncomment to point the OAuth consent flow back at this dashboard:
+      # - ARGUS_PUBLIC_BASE=http://localhost:8080
+      # - ARGUS_DASHBOARD_BASE=http://localhost:3000
+      # ── DataHub metadata-aware governance (optional) ──
+      # - DATAHUB_MCP_URL=https://<tenant>.acryl.io/integrations/ai/mcp
+      # - DATAHUB_TOKEN=<datahub pat>
+      # - DATAHUB_MUTATION_ENABLED=true
+
+  argus-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the browser bundle at build time. For a local compose
+        # setup the browser reaches the backend via the published host port.
+        - NEXT_PUBLIC_ARGUS_BACKEND_URL=http://localhost:8080
+    image: argus/frontend:v1.0.0
+    container_name: argus-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Server-side backend URL (API proxies + rewrites) — resolved inside the
+      # compose network.
+      - ARGUS_BACKEND_URL=http://argus-control-plane:8080
+    depends_on:
+      - argus-control-plane
+
+  # Optional: Redis was referenced by earlier compose files but the ARGUS Go
+  # backend currently keeps state in-memory (per README) and does NOT require
+  # Redis. Uncomment only if you run a build that connects to it.
+  # argus-redis:
+  #   image: redis:7-alpine
+  #   container_name: argus-redis
+  #   restart: always
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - argus_redis_data:/data
+  #   command: redis-server --appendonly yes
+
+# volumes:
+#   argus_redis_data:

@@ -1,0 +1,134 @@
+# ─── Go ───────────────────────────────────────────────────────────────────────
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+helper
+
+/argus-server
+/argus-cli
+/vendor/
+go.work
+go.work.sum
+
+# ─── Node / pnpm ──────────────────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─── Next.js ──────────────────────────────────────────────────────────────────
+.next/
+out/
+
+# ─── Vite (legacy) ────────────────────────────────────────────────────────────
+dist/
+dist-ssr/
+*.local
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+*.egg
+hakathon
+.installed.cfg
+MANIFEST
+build/
+develop-eggs/
+hackathon
+
+snalp/
+
+downloads/
+eggs/
+lib/
+lib64/
+sdist/
+var/
+wheels/
+share/python-wheels/
+
+# ─── Test / Coverage ──────────────────────────────────────────────────────────
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+cover/
+tests/integration/testdata
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+*.env.local
+*.env.*.local
+
+# ─── IDEs / Editors ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+Thumbs.db
+.cursor/
+
+# ─── Misc build artifacts ─────────────────────────────────────────────────────
+*.log
+*.pid
+*.seed
+*.pid.lock
+*.manifest
+*.spec
+.Python
+.installed.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+*.mo
+*.pot
+
+# ─── Frontend generated ───────────────────────────────────────────────────────
+frontend/build/
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+frontend/.turbo/
+frontend/storybook-static/
+frontend/i18n-translations-hash.json
+frontend/plugins/*/node_modules/
+frontend/plugins/*/dist/
+
+# ─── Go build binary ──────────────────────────────────────────────────────────
+cmd/argus-server/argus-server
+cmd/argus-cli/argus-cli
+
+# ─── Grammar compiled ─────────────────────────────────────────────────────────
+grammar/generated/
+
+# ─── Secrets / Env ────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# ─── Context / IDE scratch ────────────────────────────────────────────────────
+context7.json
+.govalidator/
+
+tldr
+
