@@ -1,0 +1,26 @@
+# LINGER Bond registry — minimal Foundry configuration.
+#
+# Sources live in contracts/ rather than the default src/ so the Solidity layer sits
+# clearly beside scene/ and server/ rather than looking like the root of the repo.
+
+[profile.default]
+src = "contracts"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.24"
+# Polygon PoS supports the Shanghai opcode set. Avoid Cancun so the same bytecode is
+# valid on networks that have not enabled it.
+evm_version = "shanghai"
+optimizer = true
+optimizer_runs = 200
+# Fail on any compiler warning: this contract is small enough that there is no excuse.
+deny = "warnings"
+
+[fuzz]
+runs = 512
+
+[fmt]
+line_length = 100
+tab_width = 4

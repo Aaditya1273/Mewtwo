@@ -1,7 +1,8 @@
 # LINGER — Web3 Architecture
 
-**Status: design, under review. Nothing is deployed. The feature is disabled by default and
-LINGER is fully playable with it off.**
+**Status: contract implemented and locally tested. Nothing is deployed, nothing is audited,
+and the scene is not connected to it. `LINGER_CHAIN_ENABLED` defaults to `false` and LINGER
+is fully playable with the whole layer off.**
 
 This document records the blockchain decision and why it was made. It was written after
 inspecting the installed SDK and reading current Decentraland documentation — not from
@@ -103,15 +104,21 @@ confirmation on a phone. That is the opposite of the intended feeling.
 Minimal by design. Nothing personal, nothing large, nothing that could ever need deleting.
 
 ```solidity
-struct BondProof {
-    bytes32 bondRef;      // keccak256(worldId, bondNumber) — opaque off-chain reference
-    address playerA;      // participant wallet
-    address playerB;      // participant wallet
+// bondRef (keccak256 of worldId + bond number) is the mapping key, not a stored field —
+// storing it inside the struct would pay for a slot that the key already provides.
+mapping(bytes32 => Bond) private _bonds;
+
+struct Bond {
+    address playerA;      // lower of the two addresses; ordering is canonical, not meaningful
+    address playerB;      // higher of the two
     bytes32 worldHash;    // keccak256(worldId)
     uint64  createdAt;    // block timestamp
-    uint16  version;      // protocol version
+    uint16  version;      // record format version
 }
 ```
+
+`playerA`, `playerB` and `worldHash` occupy their own slots; `createdAt` and `version` pack
+into one. Three slots per Bond.
 
 **Never stored on-chain:** notes, Echo history, Echo contents, player positions,
 per-interaction timestamps, display names, or any free-form user string.
@@ -129,45 +136,53 @@ before it happens. See §5.
 
 ---
 
-## 4. Proposed contract
+## 4. The contract
 
-Sketched here for review. **Not written to be deployed, not audited, not tested.**
+**Implemented and locally tested: `contracts/LingerBond.sol`. Not deployed, not audited.**
 
 ```solidity
-contract LingerBonds {
-    // bondRef => proof. One slot per Bond, never overwritten.
-    mapping(bytes32 => BondProof) private proofs;
+function createBond(
+    bytes32 bondRef,
+    address playerA,
+    address playerB,
+    bytes32 worldHash,
+    uint256 deadline,
+    bytes calldata consentA,   // playerA's EIP-712 BondConsent signature
+    bytes calldata consentB    // playerB's, over the identical struct
+) external;
 
-    event BondPreserved(bytes32 indexed bondRef, address indexed a, address indexed b, bytes32 worldHash);
-
-    /// Preserve a Bond. Caller is one participant (via executeMetaTransaction);
-    /// `partnerSignature` is the other participant's EIP-712 consent over the same bondRef.
-    function preserve(
-        bytes32 bondRef,
-        address partner,
-        bytes32 worldHash,
-        uint256 deadline,
-        bytes calldata partnerSignature
-    ) external;
-
-    function proofOf(bytes32 bondRef) external view returns (BondProof memory);
-}
+function bondOf(bytes32 bondRef) external view returns (Bond memory);
+function bondRefForPair(bytes32 worldHash, address a, address b) external view returns (bytes32);
+function consentDigest(...) external view returns (bytes32);
 ```
+
+**Design change from the original sketch.** The sketch had one participant call via
+`executeMetaTransaction` and supply only the partner's signature, so authorisation depended
+on `_msgSender()`. The implementation requires **both** signatures explicitly and ignores
+the caller entirely. The cost is one extra signature; the benefit is that the
+meta-transaction path carries no authority at all, so even a complete failure of it could
+not record a Bond both people had not signed. `executeMetaTransaction` is still implemented
+for Decentraland relayer compatibility.
 
 Security properties intended:
 
-- **Duplicate-proof:** `proofs[bondRef]` is written once; a second `preserve` reverts.
-- **Two-person consent enforced in the contract**, not merely in our UI — the transaction
-  carries the partner's EIP-712 signature and the contract recovers it.
+- **Duplicate-proof:** `_bonds[bondRef]` is written once; a second attempt reverts. A pair
+  is additionally unique per World.
+- **Two-person consent enforced in the contract**, not merely in our UI — both EIP-712
+  signatures are recovered and checked against the named participants.
 - **No admin, no owner, no upgradeability, no pause, no mint.** There are no privileged
   functions to document because there are none.
 - **Non-transferable.** There is no transfer function; a proof is not an asset.
 - **Deadline** on the partner signature, so a consent cannot be held and used months later.
 - Signature verification uses OpenZeppelin `ECDSA` rather than hand-rolled `ecrecover`.
 
-**Before any deployment this needs:** a Foundry or Hardhat test suite (replay, duplicate,
-expired deadline, wrong partner, malformed signature, reorg behaviour), and a review. That
-toolchain is deliberately not added yet — the architecture is under review first.
+**Done since:** 52 Foundry tests including 5 fuzz properties, covering replay, duplicates,
+expired deadlines, wrong partners, malformed signatures, cross-chain and cross-contract
+signature reuse, and every parameter-substitution attack a relayer could attempt. Full
+review in [`CONTRACT_SECURITY.md`](./CONTRACT_SECURITY.md).
+
+**Still needed before deployment:** an independent audit, and confirmation that the
+Decentraland mobile client can actually produce EIP-712 signatures.
 
 ---
 
@@ -239,20 +254,33 @@ submitted-but-unconfirmed transaction is `PRESERVING`, not preserved.
 
 ---
 
-## 8. Estimated cost
+## 8. Measured cost
 
-**Not measured. Arithmetic shown so it can be checked.**
+**Measured by `forge test --gas-report`, not estimated.** The earlier rough figure in this
+document has been replaced.
 
-One `preserve` writes ~3 storage slots and emits one event, plus an ECDSA recover:
-roughly **80,000–120,000 gas**.
+| Operation | Gas |
+|---|---|
+| `createBond` — successful, first Bond | **150,723** |
+| `createBond` — duplicate rejected | 3,480 |
+| `executeMetaTransaction` wrapping a creation | **188,366** |
+| `bondOf` lookup (view) | 2,219 |
+| `bondRefForPair` lookup (view) | 3,089 |
+| `consentDigest` (view) | 1,218 |
+| Deployment | 934,411 |
 
-On Polygon at 30–100 gwei, that is 0.0024–0.012 POL. At a POL price in the 0.15–0.50 USD
-range that is on the order of **$0.0004–$0.006 per Bond**, before any relayer margin.
+A real relayed transaction is the meta-transaction figure plus the 21,000 base cost:
+**≈ 209,000 gas**. Submitted directly by a participant instead, it is ≈ 172,000.
 
-The player pays **zero** — the relayer does. Budgeting a relayer float is an operational
-task, not a product one, and at these numbers a demo's worth of Bonds costs cents.
+On Polygon at 30–100 gwei that is **0.0063–0.021 POL**. At a POL price in the 0.15–0.50 USD
+range: roughly **$0.001–$0.010 per preserved Bond**, before relayer margin.
 
----
+Views are free when called off-chain via `eth_call`; the figures above are the on-chain
+costs if another contract were to read them.
+
+The player pays **zero** in the intended architecture — the relayer pays. Confirmed by
+`test_metaTransaction_userNeedsNoFunds`, which records a Bond for a signer holding no funds
+at all.
 
 ## 9. Security considerations
 
@@ -317,7 +345,8 @@ cross-World protocol is future work, documented nowhere but here as a possibilit
 ## 13. What has to happen before this is real
 
 1. Review this document.
-2. Write the contract with a Foundry test suite and have it reviewed.
+2. ~~Write the contract with a Foundry test suite~~ — **done**: `contracts/LingerBond.sol`,
+   52 tests, [`CONTRACT_SECURITY.md`](./CONTRACT_SECURITY.md). Independent review still needed.
 3. Deploy to **Polygon Amoy** testnet only.
 4. Verify meta-transaction signing actually works inside the Decentraland **mobile** client —
    this is the biggest unknown and the most likely thing to fail.

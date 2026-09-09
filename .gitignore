@@ -14,7 +14,7 @@ sdk7-refrance-only/
 
 # Node / build output
 node_modules/
-lib/
+server/lib/
 bin/
 package-lock.json
 
@@ -24,3 +24,8 @@ package-lock.json
 bin/
 main.crdt
 dclcontext/
+
+# Foundry build artifacts
+out/
+cache/
+broadcast/
