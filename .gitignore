@@ -1,0 +1,22 @@
+# File konfigurasi IDE
+# ---------------------
+/nbproject/
+.idea/*
+# File cache Sublime Text
+*.tmlanguage.cache
+*.tmPreferences.cache
+*.stTheme.cache
+*.sublime-workspace
+*.sublime-project
+
+# Local SDK7 reference checkout (not part of this project)
+sdk7-refrance-only/
+
+# Node / build output
+node_modules/
+lib/
+bin/
+package-lock.json
+
+# Local env
+*.env
