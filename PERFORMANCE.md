@@ -14,12 +14,13 @@ the source, measured from a build, or stated as a design decision with its reaso
 | Measurement | Value | How |
 |---|---|---|
 | Scene bundle, development build | 5.9 MB | `stat bin/index.js` after `sdk-commands build` |
-| Scene bundle, **production build** | **529 KB** | after `sdk-commands build --production` |
+| Scene bundle, **production build** | **532 KB** | after `sdk-commands build --production` |
 | Scene payload excluding bundle | 440 KB | `du -sh scene` excluding `node_modules`/`bin` |
 | 3-D assets shipped | **0 bytes** | the environment is generated from engine primitives |
 | Scene typecheck | 0 errors | `npm run typecheck` |
-| Server unit tests | 53 pass | `npm test` |
+| Server unit tests | 94 pass | `npm test` |
 | Two-player journey over the live protocol | pass | `npm run test:journey` |
+| Live restart / reconnect / disconnect resilience | pass | `npm run test:resilience` |
 
 The production build is an 11× reduction and it is what `npm run deploy` uses. The
 difference is sourcemaps; the donor project shipped the development build.
@@ -178,7 +179,12 @@ Material writes are also delta-guarded: `setHearthIntensity` ignores changes und
 4. **`MemoryPersistence` scans on every query.** It is a Map and array walk, correct and
    fast for demo volumes, and it does not survive a restart. The durable adapter is not
    implemented yet and `LINGER_PERSISTENCE=mongo` deliberately throws rather than silently
-   falling back and losing a deployment's history.
+   falling back and losing a deployment's history. See the restart limitation in the README.
+7. **`KeyedLock` is single-process.** It serialises the three check-then-write paths
+   (Echo creation, interaction, Bond creation) within one server. Running more than one
+   server process against shared storage would need a storage-level unique constraint or a
+   distributed lock instead; a Map in one process cannot protect the others. Marked in
+   `domain/keyedLock.ts`.
 5. **`reconcile()` sorts the whole Echo store** whenever a new Echo arrives. Bounded by the
    server's 60-Echo page, so it is at most a 60-element sort on an event, not a frame.
 6. **The production bundle is still ~529 KB**, essentially all SDK runtime. Not reducible

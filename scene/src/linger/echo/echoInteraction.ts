@@ -1,7 +1,7 @@
 import { InteractionType } from '../types/linger'
 import { applyLocalInteraction, getEcho } from './echoSystem'
 import { onEchoAction, EchoAction } from '../ui/panels'
-import { openEchoCard, ui } from '../ui/state'
+import { closeOverlay, openEchoCard, ui } from '../ui/state'
 import { toast } from '../ui/root'
 
 /**
@@ -36,11 +36,18 @@ function act(action: EchoAction) {
   // One action per opening of the card. Prevents double-tap spam at the source.
   if (card.acted !== '') return
 
-  card.acted = action
-
+  // Resolve the Echo BEFORE marking the card as acted. Previously the card showed
+  // "They will know you were here" even when the Echo had expired out from under it
+  // between opening the card and tapping — a confirmation for something that never
+  // happened.
   const echo = getEcho(card.echoId)
-  if (!echo) return
+  if (!echo) {
+    toast('That Echo has faded.')
+    closeOverlay()
+    return
+  }
 
+  card.acted = action
   applyLocalInteraction(card.echoId, action)
   send(card.echoId, action)
 

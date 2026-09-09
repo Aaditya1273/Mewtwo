@@ -11,7 +11,15 @@ import { buildSanctuary } from './world/environment'
 import { buildHearth, setHearthIntensity } from './hearth/hearthRenderer'
 import { resumeHearthSystem, startHearthSystem } from './hearth/hearthSystem'
 import { buildEchoPool } from './echo/echoPool'
-import { echoCount, removeEcho, setEchoes, startEchoSystem, upsertEcho } from './echo/echoSystem'
+import {
+  echoCount,
+  getEcho,
+  onEchoRemoved,
+  removeEcho,
+  setEchoes,
+  startEchoSystem,
+  upsertEcho
+} from './echo/echoSystem'
 import { handleEchoTap, initEchoInteraction, setInteractionSender } from './echo/echoInteraction'
 import { localGenesisEchoes } from './echo/genesis'
 import { addBondStone, setBondStones } from './bond/bondRenderer'
@@ -45,8 +53,8 @@ import {
 
 let identity: Identity = { id: '', name: '', hasWallet: false }
 let realmId = 'unknown'
-/** True once the server has confirmed an Echo for this visit. */
-let leftEchoThisVisit = false
+/** Id of the Echo the server confirmed for this visit, or null. */
+let myEchoId: string | null = null
 /** Queued so the return panel is not the first thing a player sees while still loading. */
 let pendingReturnPanel: (() => void) | null = null
 
@@ -71,8 +79,14 @@ export function bootstrapLinger() {
 
   onWave(wave)
 
+  // If an Echo vanishes while its card is open — expiry, or a server rejection — close
+  // the card rather than leaving the player looking at a record that no longer exists.
+  onEchoRemoved((echoId) => {
+    if (ui.echoCard && ui.echoCard.echoId === echoId) closeOverlay()
+  })
+
   startHearthSystem({
-    onEnter: () => setPrompt(leftEchoThisVisit ? 'Your Echo is here' : 'Sit & Linger'),
+    onEnter: () => setPrompt(myEchoId ? 'Your Echo is here' : 'Sit & Linger'),
     onLeave: () => clearPrompt(),
     onProgress: (p) => {
       setLinger(p)
@@ -130,6 +144,19 @@ function wireNetwork() {
       ui.activeEchoes = echoCount()
       setBondStones(bonds)
 
+      // Reconnect and restart recovery.
+      //
+      // `welcome` arrives on every join, including a reconnect after the server was
+      // restarted. If the Echo we left this visit is not in the authoritative set, it no
+      // longer exists — an in-memory server lost it, or it expired — so re-arm the Hearth
+      // and let the player leave another. Without this the player would be permanently
+      // locked out of lingering for the rest of the session, holding an Echo that is not
+      // there.
+      if (myEchoId && !getEcho(myEchoId)) {
+        myEchoId = null
+        toast('The Hearth was rekindled. You can linger again.', 4000)
+      }
+
       if (!activity.isEmpty) {
         // Hold the panel until the player has arrived and looked around. Opening it during
         // the loading fade would waste the strongest moment in the product.
@@ -147,7 +174,7 @@ function wireNetwork() {
     },
 
     onEchoCreated: (echo) => {
-      leftEchoThisVisit = true
+      myEchoId = echo.id
       upsertEcho(echo)
       ui.activeEchoes = echoCount()
       clearPrompt()
@@ -212,7 +239,7 @@ function wireNetwork() {
  * persisted, never an optimistic guess that might not be there tomorrow.
  */
 function commitEcho() {
-  if (leftEchoThisVisit) {
+  if (myEchoId) {
     resumeHearthSystem()
     return
   }
@@ -229,7 +256,7 @@ function commitEcho() {
 
   // If the server never answers, re-arm rather than leaving the player stuck on a prompt.
   utils.timers.setTimeout(() => {
-    if (!leftEchoThisVisit) {
+    if (!myEchoId) {
       clearPrompt()
       resumeHearthSystem()
     }

@@ -2,7 +2,7 @@ import { Client, Room } from 'colyseus'
 import { LingerState, PresencePlayer } from './schema/LingerState'
 import { LingerService } from '../service'
 import { Identity, WorldScope, isFailure } from '../domain/types'
-import { bondPairKey, isBondEligible, LIMITS } from '../domain/rules'
+import { bondPairKey, isBondEligible, isReservedIdentity, LIMITS } from '../domain/rules'
 import { config } from '../config'
 
 /**
@@ -37,6 +37,14 @@ export class LingerRoom extends Room<LingerState> {
   private scope!: WorldScope
   private vitalityTimer: NodeJS.Timeout | undefined
   private bondTimer: NodeJS.Timeout | undefined
+  /**
+   * Guards against overlapping Bond evaluations.
+   *
+   * The evaluation is async and runs on a 1 s interval. A slow pass — a storage adapter
+   * with real latency, say — would otherwise have a second pass start while the first is
+   * still awaiting, and both would see the same pair as eligible.
+   */
+  private evaluatingBonds = false
 
   private get service(): LingerService {
     return LingerRoom.service
@@ -74,10 +82,20 @@ export class LingerRoom extends Room<LingerState> {
     // Identity is asserted by the Decentraland client at join. See SECURITY.md for the
     // residual risk and the signature-verified path that closes it.
     const raw = options?.userData ?? {}
+    let id = String(raw.publicKey ?? raw.userId ?? `guest:${client.sessionId}`).toLowerCase()
+
+    // `linger:` is reserved for authored content such as Genesis Echoes. A client that
+    // claims one is given a session-scoped guest id instead, so it cannot leave Echoes,
+    // send interactions, or form Bonds while wearing a Founding Visitor identity.
+    if (isReservedIdentity(id)) {
+      console.warn(`[linger] rejected reserved identity claim: ${id}`)
+      id = `guest:${client.sessionId}`
+    }
+
     const identity: Identity = {
-      id: String(raw.publicKey ?? raw.userId ?? `guest:${client.sessionId}`).toLowerCase(),
+      id,
       name: String(raw.displayName ?? 'Someone').slice(0, 40),
-      hasWallet: !!raw.publicKey
+      hasWallet: !!raw.publicKey && !isReservedIdentity(String(raw.publicKey))
     }
     this.sessionIdentities.set(client.sessionId, identity)
 
@@ -214,6 +232,16 @@ export class LingerRoom extends Room<LingerState> {
    * If a room ever holds tens of players, switch to a spatial bucket keyed on the Hearth.
    */
   private async evaluateBonds() {
+    if (this.evaluatingBonds) return
+    this.evaluatingBonds = true
+    try {
+      await this.evaluateBondsOnce()
+    } finally {
+      this.evaluatingBonds = false
+    }
+  }
+
+  private async evaluateBondsOnce() {
     const now = Date.now()
     const entries = Array.from(this.state.players.entries())
     if (entries.length < 2) {
@@ -266,6 +294,15 @@ export class LingerRoom extends Room<LingerState> {
         const identityA = this.sessionIdentities.get(sessionA)
         const identityB = this.sessionIdentities.get(sessionB)
         if (!identityA || !identityB) continue
+
+        // Both must still be connected. `onLeave` clears the pair watch, so someone who
+        // disconnects mid-qualification loses their progress; this closes the remaining
+        // window where a player leaves between the snapshot at the top of this pass and
+        // the write below. There is no `await` between this check and the call.
+        if (!this.state.players.has(sessionA) || !this.state.players.has(sessionB)) {
+          this.pairs.delete(key)
+          continue
+        }
 
         const result = await this.service.createBond(identityA, identityB, this.scope)
 

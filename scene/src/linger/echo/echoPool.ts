@@ -87,6 +87,12 @@ function makeSlot(index: number): Slot {
 
 export function buildEchoPool(handler: (echoId: string) => void) {
   onTap = handler
+  // The pool is fixed for the lifetime of the scene. Guarding this means a second call —
+  // from a hot reload or a future re-init path — cannot quietly double the entity budget.
+  if (slots.length > 0) {
+    console.log('[linger] echo pool already built; keeping the existing slots')
+    return
+  }
   for (let i = 0; i < ECHO.maxVisible; i++) makeSlot(i)
 }
 

@@ -67,8 +67,10 @@ World is never blank on a first visit.
 
 ```bash
 cd server
-npm test              # 53 unit tests covering every product rule
-npm run test:journey  # two real clients drive the whole loop over the live protocol
+npm test              # 94 unit tests covering every product rule
+npm run test:journey     # two real clients drive the whole loop over the live protocol
+npm run test:resilience  # server restart, reconnect, and mid-Bond disconnect
+npm run test:all         # all three
 ```
 
 `test:journey` boots the built server, connects two Colyseus clients, and walks the entire
@@ -189,7 +191,7 @@ screen at once and never more than one modal. Nothing requires a keyboard, preci
 aiming, or an inventory. The wave is a single large button rather than an emote wheel,
 because emotes are not reachable one-thumbed.
 
-A first visit downloads about **529 KB** — the production bundle — and no 3-D assets at
+A first visit downloads about **532 KB** — the production bundle — and no 3-D assets at
 all. See [`PERFORMANCE.md`](./PERFORMANCE.md) for the entity budget, the network rules, and
 an honest list of what has and has not been measured. **No frame rate is claimed anywhere
 in this repository**, because LINGER has not been profiled on a physical device.
@@ -206,11 +208,44 @@ submitted to, or integrated with Decentraland Discover in any way.
 
 ---
 
+## Known limitation: history does not survive a server restart
+
+**Read this before a live demonstration.**
+
+LINGER currently runs on `MemoryPersistence`. Echoes, interactions, Bonds and return
+activity all live in the server process. **Restarting the server erases every one of
+them.** The durable adapter is not implemented, and `LINGER_PERSISTENCE=mongo`
+deliberately throws at boot rather than silently falling back and losing history.
+
+What actually happens on restart, verified live by `npm run test:resilience`:
+
+| | Behaviour |
+|---|---|
+| Visitor Echoes | **lost** |
+| Interactions and return activity | **lost** |
+| Bonds | **lost**, and numbering restarts at #0001 |
+| Genesis Echoes | re-seeded — the World is never blank |
+| A connected client | reconnects on its own and receives the re-seeded World |
+| That client's Hearth | re-arms, with *"The Hearth was rekindled. You can linger again."* |
+
+The client detects this: on every `welcome` it checks whether the Echo it left this visit
+is still in the authoritative set, and if not it clears its local state. Without that the
+player would be locked out of lingering for the rest of the session, holding an Echo id
+that no longer exists.
+
+**For a demo:** start the server once and leave it running. Everything created during the
+session persists for as long as the process lives. If it does restart mid-demo, nothing
+breaks and nothing needs restarting on the client — the accumulated history is simply gone
+and the World starts over from the Genesis set.
+
+
+---
+
 ## Status
 
 Working: Hearth, Echo persistence, Echo rendering, Echo interaction, return activity, live
 multiplayer presence, real-player Bonds, permanent Bond stones, mobile UI, a performance
-pass, and 53 unit tests plus a two-player integration test.
+pass, and a hardening pass — 94 unit tests plus two live integration suites.
 
 Not built yet, deliberately: the durable Mongo adapter, the blockchain provenance layer,
 Kindling, and cross-World features. The core loop comes first.

@@ -59,10 +59,27 @@ const EMOTES: EchoEmote[] = ['wave', 'sit', 'gaze', 'rest']
  * `0xABC` and `0xabc` are the same person, and names are length-capped so a crafted
  * display name cannot break a UI or bloat a record.
  */
+export const RESERVED_IDENTITY_PREFIX = 'linger:'
+
+/**
+ * True for ids LINGER reserves for its own authored content.
+ *
+ * Genesis Echoes are owned by `linger:genesis:N`. Without this guard a client could join
+ * claiming `publicKey: "linger:genesis:0"` and then leave Echoes, send interactions, and
+ * form Bonds while wearing a Founding Visitor identity — turning authored content into
+ * something that looks like a real participant, which is the one thing this product must
+ * never allow.
+ */
+export function isReservedIdentity(id: string): boolean {
+  return id.trim().toLowerCase().indexOf(RESERVED_IDENTITY_PREFIX) === 0
+}
+
 export function normaliseIdentity(raw: Partial<Identity> | undefined): Identity | null {
   if (!raw || typeof raw.id !== 'string') return null
   const id = raw.id.trim().toLowerCase()
   if (!id) return null
+  // A real participant can never hold a reserved id.
+  if (isReservedIdentity(id)) return null
   const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, 40) : ''
   return { id, name: name || 'Someone', hasWallet: !!raw.hasWallet }
 }

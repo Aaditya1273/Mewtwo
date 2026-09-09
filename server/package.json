@@ -13,7 +13,9 @@
     "clean": "node node_modules/rimraf/bin lib",
     "test": "npm run build && node --test lib/linger/__tests__/*.test.js",
     "typecheck": "tsc --noEmit",
-    "test:journey": "npm run build && node lib/linger/__tests__/journey.integration.js"
+    "test:journey": "npm run build && node lib/linger/__tests__/journey.integration.js",
+    "test:resilience": "npm run build && node lib/linger/__tests__/resilience.integration.js",
+    "test:all": "npm test && npm run test:journey && npm run test:resilience"
   },
   "author": "",
   "license": "Apache-2.0",

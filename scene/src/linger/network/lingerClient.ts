@@ -3,6 +3,7 @@ import { isPreviewMode } from '~system/EnvironmentApi'
 import * as utils from '@dcl-sdk/utils'
 import { NETWORK } from '../config'
 import { Bond, Echo, Identity, InteractionType, LivePresence, ReturnActivity } from '../types/linger'
+import { decodeActivity, decodeBond, decodeBonds, decodeEcho, decodeEchoes, decodeIdentity } from './decode'
 
 /**
  * Colyseus client for LINGER.
@@ -51,6 +52,11 @@ async function endpoint(): Promise<string> {
   }
 }
 
+/** Read a string off an untrusted payload without throwing. */
+function text(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value ? value : fallback
+}
+
 function setConnected(next: boolean) {
   if (connected === next) return
   connected = next
@@ -68,15 +74,23 @@ function snapshotPresence(state: any): LivePresence[] {
   if (!state?.players) return players
 
   state.players.forEach((player: any, sessionId: string) => {
+    const x = Number(player?.x)
+    const z = Number(player?.z)
+    // A player mid-sync can have no position yet. Skip them rather than placing them at
+    // the origin, where they would falsely read as standing next to the entry portal.
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return
+
+    const wavedAt = Number(player?.wavedAt)
+
     players.push({
       sessionId,
       identity: {
-        id: player.identityId ?? '',
-        name: player.name ?? 'Someone',
-        hasWallet: !!player.hasWallet
+        id: typeof player?.identityId === 'string' ? player.identityId : '',
+        name: (typeof player?.name === 'string' && player.name) || 'Someone',
+        hasWallet: player?.hasWallet === true
       },
-      position: { x: player.x ?? 0, y: 0, z: player.z ?? 0 },
-      wavedAt: player.wavedAt ?? 0
+      position: { x, y: 0, z },
+      wavedAt: Number.isFinite(wavedAt) ? wavedAt : 0
     })
   })
 
@@ -84,23 +98,54 @@ function snapshotPresence(state: any): LivePresence[] {
 }
 
 function attachRoomListeners(joined: Room, ownSessionId: string) {
-  joined.onMessage('welcome', (payload: any) => handlers.onWelcome(payload))
-  joined.onMessage('echoCreated', (payload: any) => handlers.onEchoCreated(payload.echo))
-  joined.onMessage('echoAdded', (payload: any) => handlers.onEchoAdded(payload.echo))
-  joined.onMessage('echoUpdated', (payload: any) => handlers.onEchoUpdated(payload.echo))
+  joined.onMessage('welcome', (payload: any) =>
+    handlers.onWelcome({
+      identity: decodeIdentity(payload?.identity),
+      worldId: typeof payload?.worldId === 'string' ? payload.worldId : '',
+      echoes: decodeEchoes(payload?.echoes),
+      bonds: decodeBonds(payload?.bonds),
+      activity: decodeActivity(payload?.activity)
+    })
+  )
+
+  joined.onMessage('echoCreated', (payload: any) => {
+    const echo = decodeEcho(payload?.echo)
+    if (echo) handlers.onEchoCreated(echo)
+  })
+  joined.onMessage('echoAdded', (payload: any) => {
+    const echo = decodeEcho(payload?.echo)
+    if (echo) handlers.onEchoAdded(echo)
+  })
+  joined.onMessage('echoUpdated', (payload: any) => {
+    const echo = decodeEcho(payload?.echo)
+    if (echo) handlers.onEchoUpdated(echo)
+  })
+
   joined.onMessage('echoRejected', (payload: any) =>
-    handlers.onEchoRejected(payload.error, payload.message)
+    handlers.onEchoRejected(text(payload?.error, 'INVALID'), text(payload?.message, 'That did not work.'))
   )
   joined.onMessage('interactionRejected', (payload: any) =>
-    handlers.onInteractionRejected(payload.echoId, payload.error, payload.message)
+    handlers.onInteractionRejected(
+      text(payload?.echoId, ''),
+      text(payload?.error, 'INVALID'),
+      text(payload?.message, 'That did not work.')
+    )
   )
-  joined.onMessage('bondCreated', (payload: any) => handlers.onBondCreated(payload.bond))
-  joined.onMessage('bondAdded', (payload: any) => handlers.onBondAdded(payload.bond))
+
+  joined.onMessage('bondCreated', (payload: any) => {
+    const bond = decodeBond(payload?.bond)
+    if (bond) handlers.onBondCreated(bond)
+  })
+  joined.onMessage('bondAdded', (payload: any) => {
+    const bond = decodeBond(payload?.bond)
+    if (bond) handlers.onBondAdded(bond)
+  })
 
   joined.onStateChange((state: any) => {
     // Exclude ourselves: the local player is rendered by the Decentraland client already.
     const others = snapshotPresence(state).filter((p) => p.sessionId !== ownSessionId)
-    handlers.onPresence(others, state?.intensity ?? 0)
+    const intensity = Number(state?.intensity)
+    handlers.onPresence(others, Number.isFinite(intensity) ? intensity : 0)
   })
 
   joined.onLeave(() => {

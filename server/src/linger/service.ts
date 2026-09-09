@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { SocialPersistence } from './persistence/SocialPersistence'
+import { KeyedLock } from './domain/keyedLock'
 import {
   Bond,
   Echo,
@@ -15,6 +16,7 @@ import {
 } from './domain/types'
 import {
   LIMITS,
+  bondPairKey,
   bondStonePosition,
   computeIntensity,
   echoRingPosition,
@@ -56,6 +58,12 @@ export const DEFAULT_LAYOUT: WorldLayout = {
 export type Clock = () => number
 
 export class LingerService {
+  /**
+   * Serialises check-then-write sequences. See `domain/keyedLock.ts` for why every one of
+   * them needs it.
+   */
+  private readonly lock = new KeyedLock()
+
   constructor(
     private readonly store: SocialPersistence,
     private readonly now: Clock = () => Date.now(),
@@ -82,6 +90,16 @@ export class LingerService {
     const identity = normaliseIdentity(actor)
     if (!identity) return err('INVALID', 'A valid identity is required to leave an Echo.')
 
+    return this.lock.run(`echo:${scope.worldId}:${identity.id}`, () =>
+      this.createEchoLocked(identity, scope, input)
+    )
+  }
+
+  private async createEchoLocked(
+    identity: Identity,
+    scope: WorldScope,
+    input: { note?: unknown; emote?: unknown }
+  ): Promise<Result<Echo>> {
     const now = this.now()
 
     const previous = await this.store.latestEchoByOwner(scope.worldId, identity.id)
@@ -151,6 +169,20 @@ export class LingerService {
     if (typeof echoId !== 'string' || !echoId) return err('INVALID', 'Unknown Echo.')
     if (!isInteractionType(type)) return err('INVALID', 'Unknown interaction.')
 
+    // Keyed on the Echo: two people may interact with two different Echoes concurrently,
+    // but two interactions against the SAME Echo are serialised, so neither the duplicate
+    // check nor the interaction counter can be raced.
+    return this.lock.run(`interact:${echoId}`, () =>
+      this.interactLocked(identity, scope, echoId, type as InteractionType)
+    )
+  }
+
+  private async interactLocked(
+    identity: Identity,
+    scope: WorldScope,
+    echoId: string,
+    type: InteractionType
+  ): Promise<Result<Echo>> {
     const now = this.now()
 
     const echo = await this.store.getEcho(echoId)
@@ -289,6 +321,19 @@ export class LingerService {
     if (!idA || !idB) return err('INVALID', 'Both players must be identified.')
     if (idA.id === idB.id) return err('INVALID', 'A Bond needs two people.')
 
+    // Keyed on the unordered pair, so A+B and B+A serialise against each other. Without
+    // this, two overlapping Bond evaluations for one pair both see "no existing Bond"
+    // and both write, producing two Bond records for the same two people.
+    return this.lock.run(`bond:${scope.worldId}:${bondPairKey(idA.id, idB.id)}`, () =>
+      this.createBondLocked(idA, idB, scope)
+    )
+  }
+
+  private async createBondLocked(
+    idA: Identity,
+    idB: Identity,
+    scope: WorldScope
+  ): Promise<Result<Bond>> {
     const existing = await this.store.findBond(scope.worldId, idA.id, idB.id)
     if (existing) return err('DUPLICATE', 'You two already share a Bond here.')
 

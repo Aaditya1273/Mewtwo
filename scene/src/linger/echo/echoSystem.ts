@@ -56,7 +56,19 @@ export function upsertEcho(echo: Echo) {
 export function removeEcho(echoId: string) {
   store.delete(echoId)
   hideEcho(echoId)
+  closeCardFor(echoId)
   reconcile()
+}
+
+/**
+ * Called when an Echo disappears while its card may be open.
+ *
+ * Injected rather than imported so the Echo store stays independent of the UI — importing
+ * ui/state here would make this module untestable in isolation.
+ */
+let closeCardFor: (echoId: string) => void = () => {}
+export function onEchoRemoved(handler: (echoId: string) => void) {
+  closeCardFor = handler
 }
 
 export function getEcho(echoId: string): Echo | undefined {
@@ -87,6 +99,7 @@ function sweep() {
     if (isExpired(echo, now)) {
       store.delete(id)
       hideEcho(id)
+      closeCardFor(id)
       removed = true
     }
   }
