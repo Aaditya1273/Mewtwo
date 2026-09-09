@@ -2,6 +2,7 @@ import assert from 'assert'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import { Client, Room } from 'colyseus.js'
+import { joinSigned, personaWallet } from './support/authClient'
 
 /**
  * Live resilience checks.
@@ -85,11 +86,15 @@ async function stopServer(): Promise<void> {
   await wait(300)
 }
 
-async function join(name: string, address: string): Promise<Room> {
-  return new Client(ENDPOINT).joinOrCreate(ROOM, {
-    realm: 'test-realm',
-    userData: { publicKey: address, displayName: name }
-  })
+/**
+ * Join as a signed-in persona.
+ *
+ * `seed` maps to a stable wallet, so the same persona keeps one verified address across
+ * sessions. Unsigned clients are `guest:<sessionId>` — a new identity each time — so any
+ * test of returning must sign, exactly as a real returning player must.
+ */
+async function join(name: string, seed: string): Promise<Room> {
+  return joinSigned(ENDPOINT, ROOM, personaWallet(seed), name)
 }
 
 function step(text: string) {
@@ -217,6 +222,66 @@ async function run() {
   await dana.leave()
   await frank.leave()
   await bob.leave()
+  await wait(200)
+
+  // ===== 4. Identity cannot be claimed ========================================
+  console.log('\n identity')
+
+  // The old hole: userData.publicKey was trusted at join. A client sending a victim's
+  // address with no ticket must NOT be able to act as them.
+  const impostorAddress = '0xvictim0000000000000000000000000000000001'
+  const impostor = await new Client(ENDPOINT).joinOrCreate(ROOM, {
+    realm: 'test-realm',
+    userData: { publicKey: impostorAddress, displayName: 'Totally The Victim' }
+  })
+  const impostorWelcome = await expectMessage<any>(impostor, 'welcome')
+
+  assert.notStrictEqual(
+    impostorWelcome.identity.id,
+    impostorAddress,
+    'a claimed publicKey must not become the session identity'
+  )
+  assert.ok(
+    impostorWelcome.identity.id.indexOf('guest:') === 0,
+    `unsigned join must be a guest, got "${impostorWelcome.identity.id}"`
+  )
+  assert.strictEqual(impostorWelcome.authenticated, false)
+  step('a claimed wallet address is ignored — the join becomes a guest')
+
+  // And the Echo they leave is owned by the guest id, not the claimed wallet.
+  const impostorEcho = expectMessage<any>(impostor, 'echoCreated')
+  impostor.send('createEcho', { note: 'not really the victim', emote: 'rest' })
+  const forged = (await impostorEcho).echo
+
+  assert.notStrictEqual(forged.owner.id, impostorAddress)
+  assert.ok(forged.owner.id.indexOf('guest:') === 0)
+  assert.strictEqual(forged.owner.hasWallet, false)
+  step('their Echo is owned by the guest id, not the claimed wallet')
+
+  // A reserved Genesis identity claim is likewise refused.
+  const genesisClaimer = await new Client(ENDPOINT).joinOrCreate(ROOM, {
+    realm: 'test-realm',
+    userData: { publicKey: 'linger:genesis:0', displayName: 'LINGER Founding Visitor' }
+  })
+  const genesisWelcome = await expectMessage<any>(genesisClaimer, 'welcome')
+  assert.ok(genesisWelcome.identity.id.indexOf('guest:') === 0)
+  assert.strictEqual(genesisWelcome.identity.hasWallet, false)
+  step('a reserved Genesis identity claim is refused')
+
+  // A bogus ticket is refused too, falling back to guest rather than being honoured.
+  const badTicket = await new Client(ENDPOINT).joinOrCreate(ROOM, {
+    realm: 'test-realm',
+    ticket: 'f'.repeat(64),
+    userData: { publicKey: impostorAddress, displayName: 'Forged Ticket' }
+  })
+  const badWelcome = await expectMessage<any>(badTicket, 'welcome')
+  assert.ok(badWelcome.identity.id.indexOf('guest:') === 0)
+  assert.strictEqual(badWelcome.authenticated, false)
+  step('a forged ticket is refused')
+
+  await impostor.leave()
+  await genesisClaimer.leave()
+  await badTicket.leave()
   await wait(200)
 
   console.log('\n  the World held together.\n')

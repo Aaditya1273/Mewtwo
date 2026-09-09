@@ -20,6 +20,7 @@ import { LingerRoom } from './linger/rooms/LingerRoom'
 import { createLingerRouter } from './linger/api/routes'
 import { devAuthEnabled, resolveIdentity } from './linger/api/identity'
 import { seedGenesisEchoes } from './linger/genesis'
+import { TicketStore } from './linger/auth/ticketStore'
 
 function buildPersistence(): SocialPersistence {
   if (config.persistence === 'mongo') {
@@ -36,9 +37,14 @@ function buildPersistence(): SocialPersistence {
 const persistence = buildPersistence()
 const service = new LingerService(persistence)
 
+// Tickets are minted by the REST auth route and redeemed by the room's onAuth, so both
+// sides must share one store.
+const tickets = new TicketStore({ ttlMs: config.ticketTtlSeconds * 1000 })
+
 // The room and the REST routes share one service instance, so both go through identical
 // rules and see identical state.
 LingerRoom.service = service
+LingerRoom.tickets = tickets
 
 export default Arena({
   getId: () => 'LINGER',
@@ -86,7 +92,7 @@ export default Arena({
 
     app.get('/health', (_req, res) => res.json({ ok: true }))
 
-    app.use('/api', createLingerRouter(service, resolveIdentity))
+    app.use('/api', createLingerRouter(service, resolveIdentity, tickets))
 
     // The Colyseus monitor exposes room internals, so it is mounted only when a password
     // is actually configured. The donor mounted it with `undefined` as the password.
@@ -124,6 +130,9 @@ export default Arena({
           '[linger] Set it to a Decentraland World you control before deploying.'
       )
     }
+    console.log(
+      `[linger] signed auth: ${config.requireSignedAuth ? 'REQUIRED' : 'optional (guests allowed)'}`
+    )
     if (devAuthEnabled()) {
       console.warn(
         '[linger] LINGER_ALLOW_DEV_AUTH=true — the REST API trusts the x-linger-identity ' +

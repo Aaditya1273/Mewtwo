@@ -1,7 +1,7 @@
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
 import { layout, palette, type as typeScale } from './theme'
-import { closeOverlay, ui } from './state'
+import { closeOverlay, toggleDiagnostics, ui } from './state'
 
 /**
  * LINGER panels.
@@ -93,6 +93,73 @@ function lingerBarWidth(): `${number}%` {
     barWidth = `${step * 2}%`
   }
   return barWidth
+}
+
+/**
+ * Connection dot plus the developer diagnostic.
+ *
+ * Collapsed it is one small dot: green connected, amber connecting, red offline. Tapping
+ * it expands the panel. This is the only way, on a deployed World, to confirm that two
+ * demo devices landed in the SAME realm — Decentraland can put two people on different
+ * islands, and two people on different islands get different live rooms and can never
+ * form a Bond with each other.
+ *
+ * Nothing here fakes cross-realm synchronisation. It reports what is actually true.
+ */
+export function Diagnostics() {
+  const dot = ui.connected ? palette.echo : palette.bond
+
+  return (
+    <UiEntity
+      uiTransform={{
+        width: '100%',
+        height: ui.diagnosticsOpen ? 170 : 28,
+        flexDirection: 'column',
+        alignItems: 'center'
+      }}
+    >
+      <UiEntity
+        uiTransform={{
+          width: layout.touchTarget,
+          height: 28,
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}
+        uiText={{ value: ui.connected ? '●' : '○', fontSize: typeScale.caption, color: dot }}
+        onMouseDown={toggleDiagnostics}
+      />
+
+      {ui.diagnosticsOpen ? (
+        <UiEntity
+          uiTransform={{
+            width: '86%',
+            maxWidth: 420,
+            height: 138,
+            flexDirection: 'column',
+            padding: { left: 16, right: 16, top: 10, bottom: 10 }
+          }}
+          uiBackground={{ color: palette.glass }}
+        >
+          {[
+            `world    ${ui.diag.worldId || '—'}`,
+            `realm    ${ui.diag.realmId || '—'}`,
+            `server   ${ui.connected ? 'connected' : 'offline'}  ${ui.diag.endpoint}`,
+            `session  ${ui.diag.sessionId || '—'}`,
+            `identity ${ui.diag.authenticated ? 'wallet (signature verified)' : 'guest'}`,
+            `players  ${ui.diag.livePlayers} here (including you)`
+          ].map((line, i) => (
+            <UiEntity
+              key={i}
+              uiTransform={{ width: '100%', height: 20 }}
+              uiText={{ value: line, fontSize: typeScale.caption, color: palette.inkDim }}
+            />
+          ))}
+        </UiEntity>
+      ) : (
+        <UiEntity uiTransform={{ width: 0, height: 0 }} />
+      )}
+    </UiEntity>
+  )
 }
 
 /** Centre contextual prompt plus the linger progress bar. */

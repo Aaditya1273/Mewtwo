@@ -14,11 +14,11 @@ the source, measured from a build, or stated as a design decision with its reaso
 | Measurement | Value | How |
 |---|---|---|
 | Scene bundle, development build | 5.9 MB | `stat bin/index.js` after `sdk-commands build` |
-| Scene bundle, **production build** | **532 KB** | after `sdk-commands build --production` |
+| Scene bundle, **production build** | **534 KB** | after `sdk-commands build --production` |
 | Scene payload excluding bundle | 440 KB | `du -sh scene` excluding `node_modules`/`bin` |
 | 3-D assets shipped | **0 bytes** | the environment is generated from engine primitives |
 | Scene typecheck | 0 errors | `npm run typecheck` |
-| Server unit tests | 94 pass | `npm test` |
+| Server unit tests | 118 pass | `npm test` |
 | Two-player journey over the live protocol | pass | `npm run test:journey` |
 | Live restart / reconnect / disconnect resilience | pass | `npm run test:resilience` |
 

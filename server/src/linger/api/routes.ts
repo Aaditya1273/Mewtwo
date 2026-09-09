@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express'
 import { LingerService } from '../service'
 import { config } from '../config'
 import { Identity, LingerError, Result, isFailure } from '../domain/types'
+import { TicketStore } from '../auth/ticketStore'
+import { identityForSigner, verifySignedRequest } from '../auth/signedAuth'
 
 /**
  * REST surface over the same LingerService the Colyseus room uses.
@@ -49,11 +51,55 @@ function guard(handler: (req: Request, res: Response) => Promise<void>) {
   }
 }
 
+/** Path the scene signs. Must match exactly on both sides — it is part of the payload. */
+export const TICKET_PATH = '/api/auth/ticket'
+
 export function createLingerRouter(
   service: LingerService,
-  resolveIdentity: IdentityResolver
+  resolveIdentity: IdentityResolver,
+  tickets: TicketStore
 ): Router {
   const router = Router()
+
+  /**
+   * Exchange a Decentraland signed request for a single-use join ticket.
+   *
+   * The scene calls this with `signedFetch`, so the Decentraland runtime attaches the
+   * player's signature. We verify it with Decentraland's own library and mint a ticket
+   * bound to the recovered wallet address. That ticket is what crosses the Colyseus
+   * handshake, which cannot carry the signature headers itself.
+   *
+   * The request body is NOT trusted for identity. Only `displayName` is read, and only as
+   * a label — the address always comes from the signature.
+   */
+  router.post(
+    '/auth/ticket',
+    guard(async (req, res) => {
+      const signer = await verifySignedRequest('post', TICKET_PATH, req.headers)
+      if (!signer) {
+        res.status(401).json({
+          ok: false,
+          error: 'INVALID_SIGNATURE',
+          message: 'A valid Decentraland signature is required.'
+        })
+        return
+      }
+
+      const identity = identityForSigner(signer, req.body?.displayName)
+      const issued = tickets.issue(identity)
+
+      res.json({
+        ok: true,
+        data: {
+          ticket: issued.ticket,
+          expiresAt: issued.expiresAt,
+          // Echoed back so the client can show who it authenticated as. It is derived
+          // from the signature, never from anything the client sent.
+          identity
+        }
+      })
+    })
+  )
 
   const scope = () => ({ worldId: config.worldId, realmId: 'rest' })
 

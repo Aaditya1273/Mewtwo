@@ -46,6 +46,18 @@ export const config = {
   /** Password for the Colyseus monitor at /colyseus. Monitor is disabled when unset. */
   monitorPassword: process.env.MONITOR_PASSWORD,
 
+  /**
+   * When true, a client that cannot present a valid signed-auth ticket is refused entry.
+   *
+   * Default false: a visitor without a wallet still gets to linger, as a session-scoped
+   * `guest:` identity that cannot collide with or impersonate any wallet address. Set true
+   * for a deployment where only verified wallets may leave social history.
+   */
+  requireSignedAuth: env('LINGER_REQUIRE_SIGNED_AUTH', 'false') === 'true',
+
+  /** How long a join ticket stays redeemable, in seconds. */
+  ticketTtlSeconds: envInt('LINGER_TICKET_TTL_SECONDS', 60),
+
   /** Origins allowed to call the REST API. */
   corsAllowlist: env(
     'LINGER_CORS_ALLOWLIST',

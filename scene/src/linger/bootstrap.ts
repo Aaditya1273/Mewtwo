@@ -28,10 +28,14 @@ import { onWave } from './ui/panels'
 import { initUi, toast } from './ui/root'
 import {
   connect,
+  getSessionId,
   initNetwork,
+  isAuthenticated,
   sendActivityRead,
   sendCreateEcho,
-  sendInteraction
+  sendInteraction,
+  setDisplayName,
+  setRealm
 } from './network/lingerClient'
 import {
   clearPrompt,
@@ -120,6 +124,10 @@ export function bootstrapLinger() {
       cameraTarget: Vector3.create(HEARTH_POSITION.x, 1.4, HEARTH_POSITION.z)
     })
 
+    setDisplayName(identity.name)
+    setRealm(realmId)
+    ui.diag.realmId = realmId
+
     await connect()
     startPresenceSystem()
   })
@@ -135,9 +143,18 @@ function wireNetwork() {
   initNetwork({
     onConnectionChange: (connected) => {
       ui.connected = connected
+      ui.diag.authenticated = isAuthenticated()
     },
 
-    onWelcome: ({ echoes, bonds, activity }) => {
+    onWelcome: ({ echoes, bonds, activity, worldId, realmId: serverRealm, identity: authIdentity }) => {
+      // Everything the diagnostic shows comes from the server, so two devices comparing
+      // panels are comparing what the server actually believes.
+      ui.diag.worldId = worldId
+      if (serverRealm) ui.diag.realmId = serverRealm
+      ui.diag.sessionId = getSessionId()
+      ui.diag.authenticated = isAuthenticated()
+      if (authIdentity && authIdentity.name) identity = authIdentity
+
       // The server is authoritative from here: its Echo set replaces the local Genesis
       // placeholders, including the server's own Genesis Echoes.
       setEchoes(echoes)
@@ -215,6 +232,7 @@ function wireNetwork() {
     onPresence: (players, intensity) => {
       setLivePresence(players)
       setHearthIntensity(intensity)
+      ui.diag.livePlayers = players.length + 1
     },
 
     onBondCreated: (bond) => {

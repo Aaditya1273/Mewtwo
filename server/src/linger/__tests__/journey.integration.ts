@@ -2,6 +2,7 @@ import assert from 'assert'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import { Client, Room } from 'colyseus.js'
+import { joinSigned, personaWallet } from './support/authClient'
 
 /**
  * The judge journey, driven over the real Colyseus protocol.
@@ -81,12 +82,15 @@ function stopServer() {
   if (server && !server.killed) server.kill('SIGTERM')
 }
 
-async function join(name: string, address: string): Promise<Room> {
-  const client = new Client(ENDPOINT)
-  return client.joinOrCreate(ROOM, {
-    realm: 'test-realm',
-    userData: { publicKey: address, displayName: name }
-  })
+/**
+ * Join as a signed-in persona.
+ *
+ * `seed` maps to a stable wallet, so the same persona keeps one verified address across
+ * sessions. Unsigned clients are `guest:<sessionId>` — a new identity each time — so any
+ * test of returning must sign, exactly as a real returning player must.
+ */
+async function join(name: string, seed: string): Promise<Room> {
+  return joinSigned(ENDPOINT, ROOM, personaWallet(seed), name)
 }
 
 function step(n: number, text: string) {
@@ -126,7 +130,11 @@ async function run() {
   alice.send('createEcho', { note: 'I was the first one here.', emote: 'rest' })
   const aliceEcho = (await created).echo
 
-  assert.strictEqual(aliceEcho.owner.id, '0xaaaa1111', 'owner is derived from the session')
+  assert.strictEqual(
+    aliceEcho.owner.id,
+    personaWallet('0xAAAA1111').address.toLowerCase(),
+    'the Echo owner is the address that actually signed, not anything the client sent'
+  )
   assert.strictEqual(aliceEcho.isGenesis, false)
   assert.strictEqual(aliceEcho.note, 'I was the first one here.')
   assert.ok(aliceEcho.expiresAt > Date.now(), 'a visitor Echo expires in 24 hours')

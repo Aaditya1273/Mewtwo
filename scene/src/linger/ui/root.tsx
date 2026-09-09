@@ -1,6 +1,6 @@
 import ReactEcs, { ReactEcsRenderer, UiEntity } from '@dcl/sdk/react-ecs'
 import * as utils from '@dcl-sdk/utils'
-import { BondCard, EchoCard, Prompt, ReturnPanel, Toast, WarmthBar, WavePanel } from './panels'
+import { BondCard, Diagnostics, EchoCard, Prompt, ReturnPanel, Toast, WarmthBar, WavePanel } from './panels'
 import { ui } from './state'
 
 /**
@@ -14,6 +14,7 @@ import { ui } from './state'
 const root = () => (
   <UiEntity uiTransform={{ width: '100%', height: '100%', flexDirection: 'column' }}>
     <WarmthBar />
+    <Diagnostics />
     {ui.overlay === 'none' ? <Prompt /> : <UiEntity uiTransform={{ width: 0, height: 0 }} />}
     {ui.overlay === 'none' ? <WavePanel /> : <UiEntity uiTransform={{ width: 0, height: 0 }} />}
     <Toast />

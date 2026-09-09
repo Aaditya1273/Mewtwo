@@ -4,6 +4,7 @@ import * as utils from '@dcl-sdk/utils'
 import { NETWORK } from '../config'
 import { Bond, Echo, Identity, InteractionType, LivePresence, ReturnActivity } from '../types/linger'
 import { decodeActivity, decodeBond, decodeBonds, decodeEcho, decodeEchoes, decodeIdentity } from './decode'
+import { requestJoinTicket } from './signedAuth'
 
 /**
  * Colyseus client for LINGER.
@@ -23,6 +24,7 @@ export interface LingerHandlers {
   onWelcome: (payload: {
     identity: Identity
     worldId: string
+    realmId: string
     echoes: Echo[]
     bonds: Bond[]
     activity: ReturnActivity
@@ -42,6 +44,36 @@ let room: Room | undefined
 let handlers: LingerHandlers
 let attempts = 0
 let connected = false
+/** Display name offered as a label with the ticket request. Never used as identity. */
+let displayName = 'Someone'
+/** True when the server verified a wallet signature for this session. */
+let authenticated = false
+
+export function setDisplayName(name: string) {
+  displayName = name || 'Someone'
+}
+
+export function isAuthenticated(): boolean {
+  return authenticated
+}
+
+let sessionId = ''
+
+/** Colyseus session id. Shown in the diagnostic so two devices can be told apart. */
+export function getSessionId(): string {
+  return sessionId
+}
+
+/** Realm label, reported so two demo devices can confirm they share a live room. */
+let currentRealm = 'unknown'
+
+export function setRealm(realm: string) {
+  currentRealm = realm || 'unknown'
+}
+
+export function getRealm(): string {
+  return currentRealm
+}
 
 async function endpoint(): Promise<string> {
   try {
@@ -102,6 +134,7 @@ function attachRoomListeners(joined: Room, ownSessionId: string) {
     handlers.onWelcome({
       identity: decodeIdentity(payload?.identity),
       worldId: typeof payload?.worldId === 'string' ? payload.worldId : '',
+      realmId: typeof payload?.realmId === 'string' ? payload.realmId : '',
       echoes: decodeEchoes(payload?.echoes),
       bonds: decodeBonds(payload?.bonds),
       activity: decodeActivity(payload?.activity)
@@ -173,10 +206,25 @@ export async function connect(): Promise<boolean> {
   if (room) return true
 
   try {
-    const client = new Client(await endpoint())
-    const joined = await client.joinOrCreate(NETWORK.roomName, {})
+    const wsEndpoint = await endpoint()
+
+    // Exchange a real Decentraland signature for a single-use join ticket. A WebSocket
+    // upgrade cannot carry the signature headers, so the signature is verified over HTTP
+    // and only the resulting ticket crosses the handshake.
+    const auth = await requestJoinTicket(wsEndpoint, displayName)
+    authenticated = auth?.authenticated === true
+
+    const client = new Client(wsEndpoint)
+    const joined = await client.joinOrCreate(NETWORK.roomName, {
+      ticket: auth?.ticket,
+      realm: currentRealm,
+      // A label only. The server ignores it for identity and derives the address from
+      // the signature; without a signature it assigns a session-scoped guest id.
+      userData: { displayName }
+    })
 
     room = joined
+    sessionId = joined.sessionId
     attempts = 0
     attachRoomListeners(joined, joined.sessionId)
     setConnected(true)

@@ -4,6 +4,7 @@ import { LingerService } from '../service'
 import { Identity, WorldScope, isFailure } from '../domain/types'
 import { bondPairKey, isBondEligible, isReservedIdentity, LIMITS } from '../domain/rules'
 import { config } from '../config'
+import { TicketStore } from '../auth/ticketStore'
 
 /**
  * The live LINGER room.
@@ -28,6 +29,8 @@ interface PairWatch {
 export class LingerRoom extends Room<LingerState> {
   /** Injected by arena.config so the room and the REST routes share one service. */
   static service: LingerService
+  /** Injected by arena.config. Redeems the tickets minted by POST /api/auth/ticket. */
+  static tickets: TicketStore
 
   /** sessionId -> identity, established at join and never read from a message. */
   private sessionIdentities = new Map<string, Identity>()
@@ -78,25 +81,48 @@ export class LingerRoom extends Room<LingerState> {
 
   // === Join / leave ============================================================
 
-  async onJoin(client: Client, options: any) {
-    // Identity is asserted by the Decentraland client at join. See SECURITY.md for the
-    // residual risk and the signature-verified path that closes it.
-    const raw = options?.userData ?? {}
-    let id = String(raw.publicKey ?? raw.userId ?? `guest:${client.sessionId}`).toLowerCase()
+  /**
+   * Establish who this client actually is, before they are allowed to join.
+   *
+   * This is the ONLY place an identity enters the system. It reads exactly one thing from
+   * the client: a join ticket, which the server itself minted after verifying a real
+   * Decentraland signature over HTTP (`POST /api/auth/ticket`). A `publicKey` in the
+   * options is ignored entirely — the field that used to be trusted here.
+   *
+   * Without a valid ticket the client becomes a `guest:<sessionId>` identity. A guest id
+   * is namespaced and session-scoped, so it can never equal or collide with a wallet
+   * address, and impersonation is not expressible. Set LINGER_REQUIRE_SIGNED_AUTH=true to
+   * refuse unsigned joins outright.
+   *
+   * Returning a falsy value makes Colyseus reject the connection with AUTH_FAILED.
+   */
+  onAuth(client: Client, options: any): Identity | false {
+    const verified = LingerRoom.tickets.redeem(options?.ticket)
 
-    // `linger:` is reserved for authored content such as Genesis Echoes. A client that
-    // claims one is given a session-scoped guest id instead, so it cannot leave Echoes,
-    // send interactions, or form Bonds while wearing a Founding Visitor identity.
-    if (isReservedIdentity(id)) {
-      console.warn(`[linger] rejected reserved identity claim: ${id}`)
-      id = `guest:${client.sessionId}`
+    if (verified) {
+      // Defence in depth: a ticket is only ever minted for a verified wallet, so this can
+      // only fire if minting is ever changed carelessly.
+      if (isReservedIdentity(verified.id)) {
+        console.warn('[linger] refused a ticket bearing a reserved identity')
+        return false
+      }
+      return verified
     }
 
-    const identity: Identity = {
-      id,
-      name: String(raw.displayName ?? 'Someone').slice(0, 40),
-      hasWallet: !!raw.publicKey && !isReservedIdentity(String(raw.publicKey))
+    if (config.requireSignedAuth) {
+      console.warn('[linger] refused an unsigned join (LINGER_REQUIRE_SIGNED_AUTH=true)')
+      return false
     }
+
+    // Unverified visitor. Their name is cosmetic and is the only thing taken from the
+    // client; the id is ours and is scoped to this session.
+    const name = String(options?.userData?.displayName ?? 'Someone').slice(0, 40)
+    return { id: `guest:${client.sessionId}`, name, hasWallet: false }
+  }
+
+  async onJoin(client: Client, options: any, auth: Identity) {
+    // `auth` is the value onAuth returned. Identity is never re-derived from options.
+    const identity = auth
     this.sessionIdentities.set(client.sessionId, identity)
 
     const player = new PresencePlayer()
@@ -115,7 +141,11 @@ export class LingerRoom extends Room<LingerState> {
 
     client.send('welcome', {
       identity,
+      // The client shows this so a player can see whether they are signed in as their
+      // wallet or browsing as a guest.
+      authenticated: identity.hasWallet,
       worldId: this.scope.worldId,
+      realmId: this.scope.realmId,
       echoes,
       bonds,
       activity

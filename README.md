@@ -67,7 +67,7 @@ World is never blank on a first visit.
 
 ```bash
 cd server
-npm test              # 94 unit tests covering every product rule
+npm test              # 118 unit tests covering every product rule
 npm run test:journey     # two real clients drive the whole loop over the live protocol
 npm run test:resilience  # server restart, reconnect, and mid-Bond disconnect
 npm run test:all         # all three
@@ -140,6 +140,15 @@ SocialPersistence
 
 ### Security
 
+- **Identity comes from a verified Decentraland signature.** The scene calls `signedFetch`,
+  the server verifies the auth chain with Decentraland's own `decentraland-crypto-middleware`,
+  and mints a single-use join ticket. That ticket is what crosses the Colyseus handshake,
+  because a WebSocket upgrade cannot carry signature headers. A `publicKey` supplied by the
+  client is ignored entirely.
+- **Unsigned visitors are guests.** They get a `guest:<sessionId>` identity, which is
+  namespaced and session-scoped, so it can never equal or collide with a wallet address.
+  Set `LINGER_REQUIRE_SIGNED_AUTH=true` to refuse unsigned joins. A guest is a new person
+  each session, so *"While You Were Away"* only works for a signed-in wallet.
 - **Identity is bound once, at join, and held server-side.** No message or request body
   ever carries an owner or actor field. A client cannot act as anyone but itself.
 - **The World is server configuration.** `LINGER_WORLD_URN` decides which World records
@@ -175,6 +184,8 @@ Server configuration:
 | `LINGER_WORLD_URN` | `linger.local` | the World records are scoped to |
 | `LINGER_PERSISTENCE` | `memory` | `memory` or `mongo` (not implemented) |
 | `LINGER_SEED_GENESIS` | `true` | seed the five Genesis Echoes |
+| `LINGER_REQUIRE_SIGNED_AUTH` | `false` | refuse joins without a verified signature |
+| `LINGER_TICKET_TTL_SECONDS` | `60` | how long a join ticket stays redeemable |
 | `LINGER_ALLOW_DEV_AUTH` | unset | trusts an identity header — **never in production** |
 | `MONITOR_PASSWORD` | unset | Colyseus monitor is disabled when unset |
 | `PORT` | `2567` | |
@@ -191,7 +202,7 @@ screen at once and never more than one modal. Nothing requires a keyboard, preci
 aiming, or an inventory. The wave is a single large button rather than an emote wheel,
 because emotes are not reachable one-thumbed.
 
-A first visit downloads about **532 KB** — the production bundle — and no 3-D assets at
+A first visit downloads about **534 KB** — the production bundle — and no 3-D assets at
 all. See [`PERFORMANCE.md`](./PERFORMANCE.md) for the entity budget, the network rules, and
 an honest list of what has and has not been measured. **No frame rate is claimed anywhere
 in this repository**, because LINGER has not been profiled on a physical device.
@@ -245,7 +256,8 @@ and the World starts over from the Genesis set.
 
 Working: Hearth, Echo persistence, Echo rendering, Echo interaction, return activity, live
 multiplayer presence, real-player Bonds, permanent Bond stones, mobile UI, a performance
-pass, and a hardening pass — 94 unit tests plus two live integration suites.
+pass, a hardening pass, and verified signed authentication — 118 unit tests plus two live
+integration suites that authenticate with real Decentraland signatures.
 
 Not built yet, deliberately: the durable Mongo adapter, the blockchain provenance layer,
 Kindling, and cross-World features. The core loop comes first.
@@ -260,6 +272,9 @@ It is built on **MRT-Backrooms** (Decentraland GameJam 2023, Apache-2.0) as a te
 donor — principally its SDK7 Colyseus polyfills, without which the standard Colyseus client
 cannot run inside Decentraland at all. The horror game it used to be is gone; the
 infrastructure it contributed is credited in full.
+
+[`MOBILE_TEST.md`](./MOBILE_TEST.md) is the manual checklist to run on a real phone before
+a demonstration — including how to confirm two devices are on the same realm.
 
 [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) lists exactly which files came from the
 donor and which are original LINGER work. [`LINGER_MIGRATION.md`](./LINGER_MIGRATION.md)

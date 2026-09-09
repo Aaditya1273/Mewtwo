@@ -52,7 +52,29 @@ export const ui = {
   bondCard: null as BondCardModel | null,
 
   /** Transient one-line confirmation. Cleared by a timer, never queued. */
-  toast: ''
+  toast: '',
+
+  /**
+   * Developer diagnostic.
+   *
+   * Collapsed to a single small connection dot, which is genuinely useful to anyone.
+   * Tapping the dot expands it. Nothing here is shown to a judge unless they tap it,
+   * and it works on a deployed World — which is the point: two demo devices need a way
+   * to confirm they are in the SAME realm, or they will never see each other.
+   */
+  diagnosticsOpen: false,
+  diag: {
+    worldId: '',
+    realmId: '',
+    sessionId: '',
+    endpoint: '',
+    authenticated: false,
+    livePlayers: 0
+  }
+}
+
+export function toggleDiagnostics() {
+  ui.diagnosticsOpen = !ui.diagnosticsOpen
 }
 
 export function setPrompt(text: string) {

@@ -53,7 +53,9 @@
     }
   ],
   "requiredPermissions": [
-    "ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE"
+    "ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE",
+    "USE_FETCH",
+    "USE_WEBSOCKET"
   ],
   "featureToggles": {},
   "worldConfiguration": {
