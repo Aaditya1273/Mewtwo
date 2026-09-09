@@ -5,40 +5,53 @@ import { movePlayerTo } from '~system/RestrictedActions'
 import { Vector3 } from '@dcl/sdk/math'
 import * as utils from '@dcl-sdk/utils'
 
-import { ENTRY_POSITION, HEARTH_POSITION, WORLD_ID } from './config'
-import { Echo, Identity } from './types/linger'
+import { ENTRY_POSITION, HEARTH_POSITION } from './config'
+import { Identity } from './types/linger'
 import { buildSanctuary } from './world/environment'
-import { buildHearth } from './hearth/hearthRenderer'
+import { buildHearth, setHearthIntensity } from './hearth/hearthRenderer'
 import { resumeHearthSystem, startHearthSystem } from './hearth/hearthSystem'
 import { buildEchoPool } from './echo/echoPool'
-import { echoCount, ringSlotPosition, setEchoes, startEchoSystem, upsertEcho } from './echo/echoSystem'
-import { handleEchoTap, initEchoInteraction } from './echo/echoInteraction'
+import { echoCount, removeEcho, setEchoes, startEchoSystem, upsertEcho } from './echo/echoSystem'
+import { handleEchoTap, initEchoInteraction, setInteractionSender } from './echo/echoInteraction'
 import { localGenesisEchoes } from './echo/genesis'
+import { addBondStone, setBondStones } from './bond/bondRenderer'
+import { clearWave, setLivePresence, startPresenceSystem, wave } from './presence/presenceSystem'
+import { onWave } from './ui/panels'
 import { initUi, toast } from './ui/root'
-import { clearPrompt, setLinger, setPrompt, ui } from './ui/state'
+import {
+  connect,
+  initNetwork,
+  sendActivityRead,
+  sendCreateEcho,
+  sendInteraction
+} from './network/lingerClient'
+import {
+  clearPrompt,
+  closeOverlay,
+  openBondCard,
+  openReturnPanel,
+  setLinger,
+  setPrompt,
+  ui
+} from './ui/state'
 
 /**
  * LINGER bootstrap.
  *
- * Order matters: the World must be visible before anything asynchronous is awaited, so a
- * slow identity call or a slow server never leaves the player staring at empty ground.
+ * Order matters: the World is built synchronously and is fully explorable before anything
+ * is awaited. A slow identity call, a slow server, or no server at all never leaves the
+ * player looking at empty ground.
  */
 
 let identity: Identity = { id: '', name: '', hasWallet: false }
 let realmId = 'unknown'
-/** Set once the player has left an Echo this visit. */
-let myEchoId: string | null = null
+/** True once the server has confirmed an Echo for this visit. */
+let leftEchoThisVisit = false
+/** Queued so the return panel is not the first thing a player sees while still loading. */
+let pendingReturnPanel: (() => void) | null = null
 
 export function getIdentity(): Identity {
   return identity
-}
-
-export function getRealmId(): string {
-  return realmId
-}
-
-export function getMyEchoId(): string | null {
-  return myEchoId
 }
 
 export function bootstrapLinger() {
@@ -50,8 +63,16 @@ export function bootstrapLinger() {
   initUi()
   startEchoSystem()
 
+  // Until the server answers, show the authored Genesis set so the World is never blank.
+  // These are replaced wholesale by the server's own Echoes on `welcome`.
+  setEchoes(localGenesisEchoes(realmId))
+  ui.activeEchoes = echoCount()
+  ui.livePlayers = 1
+
+  onWave(wave)
+
   startHearthSystem({
-    onEnter: () => setPrompt('Sit & Linger'),
+    onEnter: () => setPrompt(leftEchoThisVisit ? 'Your Echo is here' : 'Sit & Linger'),
     onLeave: () => clearPrompt(),
     onProgress: (p) => {
       setLinger(p)
@@ -60,7 +81,9 @@ export function bootstrapLinger() {
     onComplete: () => commitEcho()
   })
 
-  // ---- Asynchronous: identity, realm, and eventually the server. -----------------
+  wireNetwork()
+
+  // ---- Asynchronous: identity, realm, connection. --------------------------------
   executeTask(async () => {
     try {
       const data = await getUserData({})
@@ -78,65 +101,137 @@ export function bootstrapLinger() {
       console.log('[linger] identity unavailable', error)
     }
 
-    // Until the network layer lands, the World is seeded with the local Genesis set so
-    // a first visitor always has something real to interact with.
-    setEchoes(localGenesisEchoes(realmId))
-    ui.activeEchoes = echoCount()
-    ui.livePlayers = 1
-
-    // Place the player at the entry portal, facing the Hearth.
     movePlayerTo({
       newRelativePosition: Vector3.create(ENTRY_POSITION.x, 1, ENTRY_POSITION.z),
       cameraTarget: Vector3.create(HEARTH_POSITION.x, 1.4, HEARTH_POSITION.z)
     })
+
+    await connect()
+    startPresenceSystem()
   })
 }
 
+// === Network wiring ===========================================================
+
+function wireNetwork() {
+  setInteractionSender((echoId, type) => {
+    sendInteraction(echoId, type)
+  })
+
+  initNetwork({
+    onConnectionChange: (connected) => {
+      ui.connected = connected
+    },
+
+    onWelcome: ({ echoes, bonds, activity }) => {
+      // The server is authoritative from here: its Echo set replaces the local Genesis
+      // placeholders, including the server's own Genesis Echoes.
+      setEchoes(echoes)
+      ui.activeEchoes = echoCount()
+      setBondStones(bonds)
+
+      if (!activity.isEmpty) {
+        // Hold the panel until the player has arrived and looked around. Opening it during
+        // the loading fade would waste the strongest moment in the product.
+        pendingReturnPanel = () => {
+          openReturnPanel(activity)
+          sendActivityRead()
+        }
+        utils.timers.setTimeout(() => {
+          if (pendingReturnPanel) {
+            pendingReturnPanel()
+            pendingReturnPanel = null
+          }
+        }, 4000)
+      }
+    },
+
+    onEchoCreated: (echo) => {
+      leftEchoThisVisit = true
+      upsertEcho(echo)
+      ui.activeEchoes = echoCount()
+      clearPrompt()
+      toast('You left an Echo here.', 3800)
+      utils.timers.setTimeout(() => {
+        resumeHearthSystem()
+        setPrompt('Your Echo will stay when you go')
+        utils.timers.setTimeout(() => clearPrompt(), 4000)
+      }, 1200)
+    },
+
+    onEchoRejected: (_error, message) => {
+      // The most common rejection is the cooldown, and the message says so plainly.
+      toast(message, 3400)
+      clearPrompt()
+      resumeHearthSystem()
+    },
+
+    onEchoAdded: (echo) => {
+      upsertEcho(echo)
+      ui.activeEchoes = echoCount()
+      toast(`${echo.owner.name} left an Echo.`, 3000)
+    },
+
+    onEchoUpdated: (echo) => {
+      // Authoritative state: overwrites the optimistic local increment.
+      upsertEcho(echo)
+    },
+
+    onInteractionRejected: (echoId, error, message) => {
+      // The optimistic update was wrong. Drop the stale Echo and let the server's next
+      // update stand.
+      if (error === 'EXPIRED' || error === 'NOT_FOUND') removeEcho(echoId)
+      toast(message, 3000)
+      closeOverlay()
+    },
+
+    onPresence: (players, intensity) => {
+      setLivePresence(players)
+      setHearthIntensity(intensity)
+    },
+
+    onBondCreated: (bond) => {
+      addBondStone(bond)
+      clearWave()
+      openBondCard(bond)
+    },
+
+    onBondAdded: (bond) => {
+      addBondStone(bond)
+    }
+  })
+}
+
+// === Echo commit ==============================================================
+
 /**
- * The player completed a full linger. Create their Echo.
+ * The player completed a full linger.
  *
- * Local-only for now: the Echo is created client-side and shown immediately. When the
- * network layer lands this becomes an optimistic local insert plus a server commit, and
- * the server's id replaces the temporary one.
+ * The Echo is NOT created locally. The server owns the id, the owner, the position, the
+ * timestamps and the expiry — so what appears in the World is the record that actually
+ * persisted, never an optimistic guess that might not be there tomorrow.
  */
 function commitEcho() {
-  if (myEchoId !== null) {
-    // Already left an Echo this visit. Re-arm and say nothing.
+  if (leftEchoThisVisit) {
     resumeHearthSystem()
     return
   }
 
-  const now = Date.now()
-  const id = `local-${identity.id || 'guest'}-${now}`
-
-  const echo: Echo = {
-    id,
-    owner: identity.id ? identity : { id: 'guest', name: 'Someone', hasWallet: false },
-    worldId: WORLD_ID,
-    realmId,
-    // Stand the Echo on the ring rather than exactly where the player stood, so Echoes
-    // never pile up on the Hearth and always read as a gathering around the fire.
-    position: ringSlotPosition(id),
-    emote: 'rest',
-    note: '',
-    createdAt: now,
-    expiresAt: now + 24 * 60 * 60 * 1000,
-    interactionCount: 0,
-    interactionsByType: {},
-    isGenesis: false
+  if (!ui.connected) {
+    toast('Cannot reach the Hearth right now — your Echo was not saved.', 4000)
+    clearPrompt()
+    resumeHearthSystem()
+    return
   }
 
-  myEchoId = id
-  upsertEcho(echo)
-  ui.activeEchoes = echoCount()
+  setPrompt('Leaving your Echo...')
+  sendCreateEcho('', 'rest')
 
-  clearPrompt()
-  toast('You left an Echo here.', 3800)
-
-  // Let the message land before the Hearth is ready to accept another linger.
+  // If the server never answers, re-arm rather than leaving the player stuck on a prompt.
   utils.timers.setTimeout(() => {
-    resumeHearthSystem()
-    setPrompt('Your Echo will stay when you go')
-    utils.timers.setTimeout(() => clearPrompt(), 4000)
-  }, 1200)
+    if (!leftEchoThisVisit) {
+      clearPrompt()
+      resumeHearthSystem()
+    }
+  }, 8000)
 }

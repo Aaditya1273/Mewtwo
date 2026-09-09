@@ -40,6 +40,12 @@ export const ui = {
   activeEchoes: 0,
   connected: false,
 
+  /** Social proximity, driven by presenceSystem. */
+  nearbyName: '',
+  canWave: false,
+  theyWaved: false,
+  bothWaved: false,
+
   overlay: 'none' as Overlay,
   echoCard: null as EchoCardModel | null,
   returnPanel: null as ReturnActivity | null,

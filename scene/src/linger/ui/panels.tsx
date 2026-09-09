@@ -15,6 +15,11 @@ import { closeOverlay, ui } from './state'
 
 export type EchoAction = 'heart' | 'highfive' | 'read'
 
+let waveHandler: () => void = () => {}
+export function onWave(handler: () => void) {
+  waveHandler = handler
+}
+
 let echoActionHandler: (action: EchoAction) => void = () => {}
 export function onEchoAction(handler: (action: EchoAction) => void) {
   echoActionHandler = handler
@@ -91,6 +96,55 @@ export function Prompt() {
             uiBackground={{ color: palette.ember }}
           />
         </UiEntity>
+      ) : (
+        <UiEntity uiTransform={{ width: 0, height: 0 }} />
+      )}
+    </UiEntity>
+  )
+}
+
+/**
+ * The wave affordance.
+ *
+ * Appears only when another live player is within Bond radius. A Bond needs a deliberate,
+ * reciprocal gesture from both people — this is that gesture, as a single large button
+ * rather than an emote wheel, because emotes are not reachable on mobile with one thumb.
+ */
+export function WavePanel() {
+  if (!ui.nearbyName) return <UiEntity uiTransform={{ width: 0, height: 0 }} />
+
+  const line = ui.bothWaved
+    ? `Stay with ${ui.nearbyName} a little longer...`
+    : ui.theyWaved
+      ? `${ui.nearbyName} waved at you`
+      : `${ui.nearbyName} is here`
+
+  return (
+    <UiEntity
+      uiTransform={{
+        width: '100%',
+        height: 130,
+        flexDirection: 'column',
+        alignItems: 'center',
+        margin: { top: 8, left: 0, right: 0, bottom: 0 }
+      }}
+    >
+      <UiEntity
+        uiTransform={{ width: '100%', height: 30, justifyContent: 'center' }}
+        uiText={{
+          value: line,
+          fontSize: typeScale.body,
+          color: ui.bothWaved ? palette.bond : palette.ink
+        }}
+      />
+
+      {ui.canWave ? (
+        <ActionButton
+          label="👋  Wave back"
+          color={palette.emberSoft}
+          width="52%"
+          onPress={() => waveHandler()}
+        />
       ) : (
         <UiEntity uiTransform={{ width: 0, height: 0 }} />
       )}

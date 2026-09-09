@@ -57,8 +57,7 @@
   ],
   "featureToggles": {},
   "worldConfiguration": {
-    "name": "linger.dcl.eth",
-    "skybox": 68400,
-    "fixedAdapter": "offline:offline"
+    "name": "LINGER_WORLD_URN",
+    "skybox": 68400
   }
 }

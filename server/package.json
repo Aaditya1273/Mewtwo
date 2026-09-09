@@ -12,7 +12,8 @@
     "build": "npm run clean && tsc && node node_modules/copyfiles/copyfiles package.json ./lib && node node_modules/copyfiles/copyfiles arena.env ./lib",
     "clean": "node node_modules/rimraf/bin lib",
     "test": "npm run build && node --test lib/linger/__tests__/*.test.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:journey": "npm run build && node lib/linger/__tests__/journey.integration.js"
   },
   "author": "",
   "license": "Apache-2.0",
@@ -32,6 +33,7 @@
     "@types/passport-strategy": "^0.2.35",
     "@types/serve-index": "^1.9.1",
     "@well-known-components/interfaces": "^1.1.0",
+    "colyseus.js": "^0.14.13",
     "copyfiles": "^2.4.1",
     "eslint": "^8.17.0",
     "rimraf": "^2.7.1",
@@ -43,6 +45,7 @@
     "@colyseus/arena": "^0.14.24",
     "@colyseus/monitor": "^0.14.22",
     "@colyseus/social": "^0.11.7",
+    "@colyseus/ws-transport": "^0.14.21",
     "@mikro-orm/core": "^4.5.5",
     "@mikro-orm/mongodb": "^4.5.5",
     "@sentry/node": "^6.17.3",
@@ -62,7 +65,6 @@
     "ts-md5": "^1.3.1",
     "ts-node": "^8.1.0",
     "ts-node-dev": "^1.0.0-pre.63",
-    "winston": "^3.3.3",
-    "@colyseus/ws-transport": "^0.14.28"
+    "winston": "^3.3.3"
   }
 }

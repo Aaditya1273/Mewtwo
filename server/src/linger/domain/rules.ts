@@ -7,12 +7,26 @@ import { Echo, EchoEmote, Identity, InteractionType, INTERACTION_TYPES } from '.
  * what makes the whole rule set directly testable.
  */
 
+/**
+ * Read a tuning knob from the environment, falling back to the shipped default.
+ *
+ * These are genuine product tuning values — the Bond duration is specified as
+ * "approximately 30-60 seconds" — so they are configurable rather than baked in.
+ * Keeping them here rather than importing the config module leaves this file pure
+ * apart from a single read at load time, which the tests rely on.
+ */
+function tunable(name: string, fallback: number): number {
+  const raw = typeof process !== 'undefined' ? process.env?.[name] : undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 export const LIMITS = {
   /** Echo lifetime. */
   echoTtlMs: 24 * 60 * 60 * 1000,
 
   /** One Echo per identity per World in this window. Stops Echo spam at the source. */
-  echoCooldownMs: 5 * 60 * 1000,
+  echoCooldownMs: tunable('LINGER_ECHO_COOLDOWN_MS', 5 * 60 * 1000),
 
   /** Interactions an identity may send per World per hour. */
   interactionsPerHour: 60,
@@ -24,10 +38,10 @@ export const LIMITS = {
   bondRadius: 4,
 
   /** Two players must be together this long before a Bond is eligible. */
-  bondMinTogetherMs: 30 * 1000,
+  bondMinTogetherMs: tunable('LINGER_BOND_MIN_TOGETHER_MS', 30 * 1000),
 
   /** A wave counts toward Bond eligibility for this long. */
-  bondWaveWindowMs: 15 * 1000,
+  bondWaveWindowMs: tunable('LINGER_BOND_WAVE_WINDOW_MS', 15 * 1000),
 
   /** Bonds an identity may form per World per day. */
   bondsPerDay: 20,
