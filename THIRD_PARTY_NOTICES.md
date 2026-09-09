@@ -21,19 +21,24 @@ used under the Apache License 2.0:
 | `scene/src/modules/playerSounds.ts` | avatar-attached one-shot audio with automatic cleanup |
 | `scene/src/modules/logic/weighted_random.ts` | weighted random selection |
 | `server/src/arena.config.ts` | Colyseus Arena bootstrap, Express mounting, CORS allowlist, monitor auth *(modified for LINGER)* |
-| `server/src/config/database.config.ts` | MikroORM dependency-injection container |
+| `server/src/config/database.config.ts` | MikroORM connection *(modified: entities are now an argument rather than hardcoded)* |
 | `server/src/entities/BaseEntity.ts` | MikroORM base entity (`_id`, `id`, `createdAt`, `updatedAt`) |
-| `server/src/helpers/security/` | Decentraland origin, IP denylist and catalyst-position checks *(unused in the donor; wired up by LINGER)* |
-| `server/src/helpers/logger.js`, `server/src/helpers/timeUtils.ts` | logging and date utilities |
+| `server/src/helpers/security/` | Decentraland origin, IP denylist and catalyst-position checks |
+| `server/src/helpers/utils.ts` | constants and types the security checks depend on |
 
 The Apache-2.0 `NOTICE` and copyright headers present in the donor sources are preserved.
 
 ### What was removed from the donor
 
-All Backrooms/horror gameplay, branding and assets were removed: the procedural dungeon
-generator, the enemy and combat systems, inventory and pickups, the horror UI, and roughly
-84 MB of models, textures and audio. None of the donor's art, audio or written content
-appears in LINGER.
+**Scene:** the procedural dungeon generator, the enemy and combat systems, inventory and
+pickups, the horror UI, all branding, and roughly 84 MB of models, textures and audio.
+
+**Server:** `MainRoom`, `dbUtils`, `rooms/env`, `MainRoomState`, and the `User` / `Stat` /
+`Config` entities (all MRT gameplay); `mikro-orm.config.ts` (entirely commented out in the
+donor); `telegram.ts` (an empty file); and `logger.js` / `timeUtils.ts`, which nothing in
+LINGER uses.
+
+None of the donor's art, audio or written content appears in LINGER.
 
 ---
 
