@@ -1,17 +1,18 @@
 {
-  "name": "dcl-project",
-  "version": "1.0.0",
-  "description": "SDK7 Template scene",
+  "name": "linger-scene",
+  "version": "0.1.0",
+  "description": "LINGER \u2014 The Presence Protocol. Decentraland SDK7 scene.",
   "scripts": {
     "start": "sdk-commands start --web3",
     "deploy": "sdk-commands deploy --target-content https://worlds-content-server.decentraland.org",
     "build": "sdk-commands build",
     "upgrade-sdk": "npm install --save-dev @dcl/sdk@latest",
-    "upgrade-sdk:next": "npm install --save-dev @dcl/sdk@next"
+    "upgrade-sdk:next": "npm install --save-dev @dcl/sdk@next",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@dcl/js-runtime": "7.3.1",
-    "@dcl/sdk": "^7.3.1"
+    "@dcl/js-runtime": "7.27.0",
+    "@dcl/sdk": "7.27.0"
   },
   "engines": {
     "node": ">=16.0.0",
@@ -29,5 +30,6 @@
   },
   "bundleDependencies": [
     "colyseus.js"
-  ]
+  ],
+  "license": "Apache-2.0"
 }

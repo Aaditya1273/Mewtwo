@@ -1,8 +1,8 @@
-import "./modules/mapgen/levelgeneration";
-import { initGamePlay } from "./gameplay"
-import "./modules/compatibility/polyfill/declares";
+import './modules/compatibility/polyfill/declares'
+import { bootstrapLinger } from './linger/bootstrap'
+
 export * from '@dcl/sdk'
 
-export function main(){
-  initGamePlay();
+export function main() {
+  bootstrapLinger()
 }

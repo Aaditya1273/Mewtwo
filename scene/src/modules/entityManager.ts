@@ -12,7 +12,6 @@ export function createEntity(position: Vector3 = Vector3.create(0,0,0), model: s
         Animator.create(entity, {
             states: [
                 {
-                    name: animation,
                     clip: animation,
                     playing: true,
                     loop: true
