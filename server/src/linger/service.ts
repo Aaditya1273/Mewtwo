@@ -327,22 +327,22 @@ export class LingerService {
    *
    * This is LINGER's own metric. It is not read by, submitted to, or integrated with
    * Decentraland Discover in any way.
+   *
+   * Genesis Echoes are excluded from `activeEchoes`. They are content we authored, so
+   * counting them would mean a World that nobody has ever visited reports social
+   * activity — the exact dishonesty this product exists to avoid. A cold World reads
+   * as cold here even while five Genesis Echoes stand around the Hearth.
    */
   async getVitality(scope: WorldScope, livePlayers: number): Promise<WorldVitality> {
     const now = this.now()
-    const echoes = await this.store.listEchoes(scope.worldId, now, LIMITS.echoPageSize)
+    const activeEchoes = await this.store.countVisitorEchoes(scope.worldId, now)
     const interactionsLast24h = await this.store.countInteractionsSince(
       scope.worldId,
       now - 24 * 60 * 60 * 1000
     )
     const totalBonds = await this.store.countBonds(scope.worldId)
 
-    const stats = {
-      activeEchoes: echoes.length,
-      livePlayers,
-      interactionsLast24h,
-      totalBonds
-    }
+    const stats = { activeEchoes, livePlayers, interactionsLast24h, totalBonds }
     return { ...stats, intensity: computeIntensity(stats) }
   }
 }

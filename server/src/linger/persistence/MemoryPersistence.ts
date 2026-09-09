@@ -82,6 +82,17 @@ export class MemoryPersistence implements SocialPersistence {
     return removed
   }
 
+  async countVisitorEchoes(worldId: string, now: number): Promise<number> {
+    let count = 0
+    for (const echo of this.echoes.values()) {
+      if (echo.worldId !== worldId) continue
+      if (echo.isGenesis) continue
+      if (echo.expiresAt > 0 && echo.expiresAt <= now) continue
+      count++
+    }
+    return count
+  }
+
   // --- Interactions ------------------------------------------------------------
 
   async createInteraction(interaction: EchoInteraction): Promise<EchoInteraction> {

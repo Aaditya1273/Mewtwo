@@ -20,6 +20,9 @@ export const LIMITS = {
   /** Maximum note length after trimming. */
   noteMaxLength: 140,
 
+  /** Two live players must be within this many metres of each other. */
+  bondRadius: 4,
+
   /** Two players must be together this long before a Bond is eligible. */
   bondMinTogetherMs: 30 * 1000,
 

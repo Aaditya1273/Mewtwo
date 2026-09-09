@@ -97,7 +97,13 @@ export interface WorldScope {
  * and those are not exceptional. Returning them keeps the Colyseus room and the REST
  * routes handling failure identically.
  */
-export type Result<T> = { ok: true; value: T } | { ok: false; error: LingerError; message: string }
+export interface LingerFailure {
+  ok: false
+  error: LingerError
+  message: string
+}
+
+export type Result<T> = { ok: true; value: T } | LingerFailure
 
 export type LingerError =
   | 'RATE_LIMITED'
@@ -114,4 +120,14 @@ export function ok<T>(value: T): Result<T> {
 
 export function err<T>(error: LingerError, message: string): Result<T> {
   return { ok: false, error, message }
+}
+
+/**
+ * Narrow a Result to its failure branch.
+ *
+ * TypeScript 4.6 does not reliably narrow a union parameterised by a type variable, so
+ * callers use this guard rather than testing `result.ok` inline.
+ */
+export function isFailure(result: Result<unknown>): result is LingerFailure {
+  return result.ok === false
 }

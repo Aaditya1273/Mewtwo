@@ -24,6 +24,11 @@ export interface SocialPersistence {
   updateEcho(echo: Echo): Promise<Echo>
   /** Hard-delete expired Echoes. Returns how many went. */
   purgeExpiredEchoes(worldId: string, now: number): Promise<number>
+  /**
+   * Count live Echoes left by real visitors, excluding Genesis Echoes.
+   * This is the metrics-grade count: authored content must never inflate a social number.
+   */
+  countVisitorEchoes(worldId: string, now: number): Promise<number>
 
   // --- Interactions ------------------------------------------------------------
 
