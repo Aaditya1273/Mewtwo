@@ -61,12 +61,15 @@ export const PRESENCE = {
 }
 
 /**
- * Server endpoint. Preview builds talk to a local server; production uses
- * LINGER_SERVER_WSS. Both are overridable without touching product code.
+ * Server endpoint.
+ *
+ * Preview builds talk to a local server. The production value is a PLACEHOLDER and is
+ * stamped in at deploy time by `scripts/configure-world.js` from LINGER_SERVER_WSS.
+ * No host is claimed here.
  */
 export const NETWORK = {
   localWss: 'ws://localhost:2567',
-  productionWss: 'wss://linger-server.fly.dev',
+  productionWss: 'wss://LINGER_SERVER_WSS',
   /** Room name registered by the LINGER server. */
   roomName: 'linger_world',
   /** Give up reconnecting after this many consecutive failures. */
@@ -74,5 +77,11 @@ export const NETWORK = {
   reconnectBackoffMs: 2000
 }
 
-/** Identifier for this World. Persistent records are scoped by it. */
-export const WORLD_ID = 'linger.dcl.eth'
+/**
+ * Display-only World label.
+ *
+ * Persistent records are scoped by the SERVER's LINGER_WORLD_URN, never by anything the
+ * client sends — a client cannot choose which World it writes to. This value exists only
+ * for local placeholder Echoes shown before the server answers.
+ */
+export const WORLD_ID = 'linger'

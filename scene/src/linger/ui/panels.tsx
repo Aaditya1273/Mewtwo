@@ -25,13 +25,27 @@ export function onEchoAction(handler: (action: EchoAction) => void) {
   echoActionHandler = handler
 }
 
-/** Top band: how alive the World is right now. Read-only, never blocks a tap. */
+/**
+ * Top band: how alive the World is right now. Read-only, never blocks a tap.
+ *
+ * The label is memoised. react-ecs re-invokes every component each frame, so building
+ * this string inline meant an array plus a join 60 times a second for a value that
+ * changes a few times a minute.
+ */
+let warmthLabel = ''
+let warmthKey = ''
+
 export function WarmthBar() {
-  const parts: string[] = []
-  if (ui.livePlayers > 0) {
-    parts.push(ui.livePlayers === 1 ? 'you are here' : `${ui.livePlayers} here now`)
+  const key = `${ui.livePlayers}|${ui.activeEchoes}`
+  if (key !== warmthKey) {
+    warmthKey = key
+    const parts: string[] = []
+    if (ui.livePlayers > 0) {
+      parts.push(ui.livePlayers === 1 ? 'you are here' : `${ui.livePlayers} here now`)
+    }
+    parts.push(ui.activeEchoes === 1 ? '1 echo' : `${ui.activeEchoes} echoes`)
+    warmthLabel = parts.join('   ·   ')
   }
-  parts.push(ui.activeEchoes === 1 ? '1 echo' : `${ui.activeEchoes} echoes`)
 
   return (
     <UiEntity
@@ -53,13 +67,32 @@ export function WarmthBar() {
         }}
         uiBackground={{ color: palette.glass }}
         uiText={{
-          value: parts.join('   ·   '),
+          value: warmthLabel,
           fontSize: typeScale.caption,
           color: ui.connected ? palette.ink : palette.inkDim
         }}
       />
     </UiEntity>
   )
+}
+
+/**
+ * Progress bar width, quantised to 2% steps.
+ *
+ * Without this the width is a newly allocated template string on every frame. Quantising
+ * means the string changes about fifty times across a twenty second linger instead of
+ * twelve hundred, and the bar still looks continuous.
+ */
+let barWidth: `${number}%` = '0%'
+let barStep = -1
+
+function lingerBarWidth(): `${number}%` {
+  const step = Math.round(ui.lingerProgress * 50)
+  if (step !== barStep) {
+    barStep = step
+    barWidth = `${step * 2}%`
+  }
+  return barWidth
 }
 
 /** Centre contextual prompt plus the linger progress bar. */
@@ -92,7 +125,7 @@ export function Prompt() {
           uiBackground={{ color: palette.glassLight }}
         >
           <UiEntity
-            uiTransform={{ width: `${Math.round(ui.lingerProgress * 100)}%`, height: '100%' }}
+            uiTransform={{ width: lingerBarWidth(), height: '100%' }}
             uiBackground={{ color: palette.ember }}
           />
         </UiEntity>
@@ -299,9 +332,16 @@ export function EchoCard() {
 }
 
 /** "While you were away" — the retention moment. Quiet, never a notification dump. */
+let returnLines: string[] = []
+let returnLinesFor: unknown = null
+
 export function ReturnPanel() {
   const a = ui.returnPanel
   if (!a) return <UiEntity uiTransform={{ width: 0, height: 0 }} />
+
+  // Built once when the panel opens, not on every one of the frames it stays open.
+  if (returnLinesFor === a) return renderReturnPanel(returnLines)
+  returnLinesFor = a
 
   const lines: string[] = []
   if (a.hearts > 0) {
@@ -319,6 +359,11 @@ export function ReturnPanel() {
     lines.push(`◈   Your Bond with ${bond.playerB.name || 'someone'} still stands.`)
   }
 
+  returnLines = lines
+  return renderReturnPanel(lines)
+}
+
+function renderReturnPanel(lines: string[]) {
   return (
     <Card height={150 + lines.length * 36}>
       <UiEntity

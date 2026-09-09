@@ -4,11 +4,14 @@
   "description": "LINGER \u2014 The Presence Protocol. Decentraland SDK7 scene.",
   "scripts": {
     "start": "sdk-commands start --web3",
-    "deploy": "sdk-commands deploy --target-content https://worlds-content-server.decentraland.org",
+    "deploy": "npm run config:check && sdk-commands build --production && sdk-commands deploy --target-content https://worlds-content-server.decentraland.org",
     "build": "sdk-commands build",
     "upgrade-sdk": "npm install --save-dev @dcl/sdk@latest",
     "upgrade-sdk:next": "npm install --save-dev @dcl/sdk@next",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "configure": "node scripts/configure-world.js --write",
+    "config:check": "node scripts/configure-world.js --check",
+    "build:prod": "sdk-commands build --production"
   },
   "devDependencies": {
     "@dcl/js-runtime": "7.27.0",

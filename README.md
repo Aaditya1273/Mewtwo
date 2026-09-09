@@ -1,65 +1,231 @@
-# MRT-Backrooms Decentraland GameJam
-Meta Residence Tower submission for GameJam 2023
+# LINGER
 
-[Play](https://play.decentraland.org/?realm=8metagames.dcl.et)
+**The Presence Protocol — Making Worlds Remember.**
 
+> The World that is never empty, because everyone who leaves, stays.
 
-The Meta Residence Tower Backrooms project utilizes several new SDK7 technologies and newly developed systems. 
+*The Friendzone That Misses You.*
 
-## Main Features
+---
 
-- A core concept based on a roguelike game where the player must navigate through rooms to achieve their goals and survive.
-- Procedural generation of maze-like levels.
-- Random generation of room decorations, furniture, and level rewards.
-- Functional enemies equipped with AI and unique abilities.
-- Neural network-generated music that creates a surreal, dream-like atmosphere.
-- Neural network-generated surroundings to enhance immersion.
-- Storytelling through audiotapes that narrate the eerie lore of this dreamlike world.
+## The problem
 
-## Game Areas
+Multiplayer Worlds have a cold-start problem. A visitor arrives, finds nobody there, and
+leaves — which makes it more likely the next visitor finds nobody there either. Every
+session starts from empty, and nothing a person does in a World survives their leaving it.
 
-1. The backrooms of MRT apartments are haunted by ghostly creatures.
-2. Classic luminal space backrooms where the room itself tries to hunt the player down.
-3. A hellish area inspired by classic horror games where players must utilize all their resources to survive.
+## The solution
 
-## Open Source Systems and Content
+LINGER lets a person's presence persist after they go.
 
-We have finished and are ready to provide open-source access to the following systems and content:
+You visit a small sanctuary. You spend twenty seconds at the Hearth. When you leave, you
+leave an **Echo** behind. The next visitor sees genuine Echoes from the people who came
+before, and can reach back to them. When two real people meet here and stay together, they
+leave a **Bond** — and the Bond is permanent.
 
-- Interaction with the Colyseus server.
-- DB Interaction.
-- UI Example.
-- A fog system capable of real-time player tracking without lag, made possible by SDK7.
-- Procedural generation of dungeons from basic shapes. This system is versatile and can be used in any project requiring it.
-- Maze complexity adaptable to any difficulty level, ranging from a short 4-room tour to a maze of tens of rooms filled with dangers and discoveries.
-- Evolving enemy and maze difficulty throughout the game.
-- A decal application system alongside procedural generation, capable of applying randomly selected textures to generate unique levels. New ones are easy to add.
-- A system for generating doors that block paths on generated levels, including door frames for empty ones.
-- Back-end integration of player health control and leaderboard.
-- An extended navigation system for AI, coupled with a mapping system to support randomly generated environments.
-- AI capabilities to haunt the player, with teleportation and movement speed regulation.
-- Audible cues to telegraph enemy actions.
-- Health and end-game systems.
-- Inventory and item pickup systems.
-- A UI system that can support an inventory and health system.
-- A universal tooltip system for UI, for both fluff and tutorial purposes. The player is properly notified about what to do and how the mechanics work.
-- Support for playing multiple sounds simultaneously from one source.
-- A random selector for an ambiance that's tied to procedural generation.
+The World accumulates social history instead of resetting to empty.
 
-## AI Tools Used
+This is not a mini-game. It is a presence primitive that other Decentraland Worlds could
+eventually reuse.
 
-- Midjourney - Art 
-- Stable Diffusion - Art 
-- Zyro API - Creation of transparent backgrounds for decals 
-- ElevenLabs - Speech 
-- OpenAI GPT3.5 - Code annotation and formatting 
-- OpenAI GPT4 - Assistance in design decisions and code optimization 
-- MusicGen - Music Generation
+---
 
+## The loop
 
-## Team 
+```
+  linger at the Hearth  ──▶  leave an Echo  ──▶  someone interacts with it
+          ▲                                                │
+          │                                                ▼
+       a Bond  ◀──  two real people meet  ◀──  you return and find out
+```
 
-The project is developed by a team of four individuals from the MRT Team.
+1. **Linger.** Stand at the Hearth for about twenty seconds. The fire brightens as you stay.
+2. **Echo.** Your presence persists for 24 hours as a translucent figure facing the fire.
+3. **Interaction.** A later visitor taps your Echo — a Heart, a High-five, or reading your note.
+4. **Return.** You come back and the World tells you: *someone remembered your Echo.*
+5. **Bond.** Two live people wave to each other and stay together. A Bond stone appears near
+   the Hearth with both names on it, and it never goes away.
 
+---
 
-Apache License Version 2.0
+## Try it
+
+Two terminals. No database, no accounts, no external services.
+
+```bash
+# 1. the server
+cd server && npm install && npm start
+
+# 2. the scene
+cd scene && npm install && npm start
+```
+
+The server runs on an in-memory store by default and seeds five Genesis Echoes, so the
+World is never blank on a first visit.
+
+### Verify it without a Decentraland client
+
+```bash
+cd server
+npm test              # 53 unit tests covering every product rule
+npm run test:journey  # two real clients drive the whole loop over the live protocol
+```
+
+`test:journey` boots the built server, connects two Colyseus clients, and walks the entire
+judge journey: enter alone → find the Genesis Echoes → interact → leave a real Echo → leave
+→ second player arrives and finds it → interacts → first player returns to *While You Were
+Away* → both wave → **Bond #0001** → a later visitor still finds the Bond stone.
+
+---
+
+## Genesis Echoes
+
+A judge may walk in alone. The World must still show what it is.
+
+Five **Genesis Echoes** are authored by the LINGER team. They are not fake users, and
+LINGER takes some care to make that impossible to mistake:
+
+- they are named **LINGER Founding Visitor**
+- they render **warm amber**; real visitor Echoes render **cool blue**
+- their card says *Genesis Echo · LINGER Founding Visitor*
+- they are marked `isGenesis` in the data and owned by a `linger:genesis:*` id that can
+  never be a wallet
+- **they are excluded from World Vitality.** A World nobody has visited reports an
+  intensity of zero even with five Genesis Echoes standing in it.
+
+A real person's interaction *with* a Genesis Echo does count — a real human made it.
+
+LINGER never presents authored content as a real visitor.
+
+---
+
+## Architecture
+
+```
+scene/                        Decentraland SDK7, TypeScript
+  src/linger/
+    world/environment.ts      sanctuary built from engine primitives — no GLB, no textures
+    hearth/                   proximity, 20s linger timer, vitality-driven glow
+    echo/                     pooled visuals, lifecycle, interaction, Genesis fallback
+    bond/                     permanent Bond stones
+    presence/                 throttled position reporting, nearby-player tracking
+    network/                  Colyseus client
+    ui/                       mobile-first UI: theme, state, panels, root
+
+server/                       Colyseus + Express, TypeScript
+  src/linger/
+    domain/                   product rules as pure functions
+    persistence/              SocialPersistence interface + adapters
+    service.ts                LingerService — every rule lives here
+    rooms/LingerRoom.ts       live presence, Echo commit, Bond detection
+    api/routes.ts             REST surface over the same service
+```
+
+**One rule engine, two entry points.** The Colyseus room and the REST routes are both thin
+adapters over `LingerService`, so the tests exercise the real rules with no Decentraland
+client and no database.
+
+**Storage is an interface.** `SocialPersistence` has a complete in-memory adapter (the
+default) and is the seam a durable or on-chain adapter plugs into later without touching
+Echo or Bond logic.
+
+```
+SocialPersistence
+├── MemoryPersistence      complete — the default, needs no services
+├── MongoPersistence       not implemented yet
+└── BlockchainPersistence  future — Bond provenance only, never per-interaction
+```
+
+### Security
+
+- **Identity is bound once, at join, and held server-side.** No message or request body
+  ever carries an owner or actor field. A client cannot act as anyone but itself.
+- **The World is server configuration.** `LINGER_WORLD_URN` decides which World records
+  belong to; a client cannot choose what it writes to, so Worlds cannot bleed into
+  each other.
+- **The server owns every field that matters** — id, owner, position, timestamps, expiry.
+- **Rate limits** on Echo creation, interactions, and Bonds.
+- **No `POST /bond`.** A Bond requires two live people to be co-present, both having waved,
+  for a sustained period. Only the live room can witness that. Exposing a create endpoint
+  would hand anyone a way to manufacture relationships over HTTP.
+
+---
+
+## Deployment
+
+**This repository does not control any Decentraland World namespace, and does not claim
+one.** `scene.json` ships the literal placeholder `LINGER_WORLD_URN`, and `npm run deploy`
+refuses to run until a real name is configured.
+
+```bash
+cd scene
+LINGER_WORLD_URN=yourname.dcl.eth \
+LINGER_SERVER_WSS=wss://your-server.example.com \
+  npm run configure
+
+npm run deploy        # production build, then deploy
+```
+
+Server configuration:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LINGER_WORLD_URN` | `linger.local` | the World records are scoped to |
+| `LINGER_PERSISTENCE` | `memory` | `memory` or `mongo` (not implemented) |
+| `LINGER_SEED_GENESIS` | `true` | seed the five Genesis Echoes |
+| `LINGER_ALLOW_DEV_AUTH` | unset | trusts an identity header — **never in production** |
+| `MONITOR_PASSWORD` | unset | Colyseus monitor is disabled when unset |
+| `PORT` | `2567` | |
+
+---
+
+## Mobile
+
+Mobile is the primary platform, desktop is secondary.
+
+The bottom 34% of the screen is reserved for the client's joystick and action buttons and
+carries no LINGER control. Touch targets are 64 px. There are at most three actions on
+screen at once and never more than one modal. Nothing requires a keyboard, precision
+aiming, or an inventory. The wave is a single large button rather than an emote wheel,
+because emotes are not reachable one-thumbed.
+
+A first visit downloads about **529 KB** — the production bundle — and no 3-D assets at
+all. See [`PERFORMANCE.md`](./PERFORMANCE.md) for the entity budget, the network rules, and
+an honest list of what has and has not been measured. **No frame rate is claimed anywhere
+in this repository**, because LINGER has not been profiled on a physical device.
+
+---
+
+## World Vitality
+
+LINGER computes its own **World Vitality** signal from recent visitors, live Echoes,
+interactions and Bonds, and uses it to drive how brightly the Hearth burns.
+
+This is a **prototype discovery signal**. It is LINGER's own metric. It is not read by,
+submitted to, or integrated with Decentraland Discover in any way.
+
+---
+
+## Status
+
+Working: Hearth, Echo persistence, Echo rendering, Echo interaction, return activity, live
+multiplayer presence, real-player Bonds, permanent Bond stones, mobile UI, a performance
+pass, and 53 unit tests plus a two-player integration test.
+
+Not built yet, deliberately: the durable Mongo adapter, the blockchain provenance layer,
+Kindling, and cross-World features. The core loop comes first.
+
+---
+
+## Credits and licence
+
+LINGER is Apache-2.0.
+
+It is built on **MRT-Backrooms** (Decentraland GameJam 2023, Apache-2.0) as a technical
+donor — principally its SDK7 Colyseus polyfills, without which the standard Colyseus client
+cannot run inside Decentraland at all. The horror game it used to be is gone; the
+infrastructure it contributed is credited in full.
+
+[`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) lists exactly which files came from the
+donor and which are original LINGER work. [`LINGER_MIGRATION.md`](./LINGER_MIGRATION.md)
+records the audit the transformation was based on.
