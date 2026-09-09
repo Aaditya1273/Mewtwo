@@ -1,0 +1,12 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "display": {
+    "title": "LINGER EIP-712 Signing Probe",
+    "description": "Diagnostic only. Requests one EIP-712 signature and verifies it locally. Sends no transaction."
+  },
+  "main": "bin/index.js",
+  "tags": ["diagnostic"],
+  "scene": { "parcels": ["0,0"], "base": "0,0" },
+  "requiredPermissions": ["USE_WEB3_API", "USE_FETCH"]
+}

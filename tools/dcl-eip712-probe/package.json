@@ -1,0 +1,18 @@
+{
+  "name": "dcl-eip712-probe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated diagnostic: can a real Decentraland client execute eth_signTypedData_v4 for the audited LingerBond BondConsent vector?",
+  "scripts": {
+    "start": "sdk-commands start --web3",
+    "build": "sdk-commands build",
+    "verify": "node verify.js"
+  },
+  "devDependencies": {
+    "@dcl/js-runtime": "7.27.0",
+    "@dcl/sdk": "7.27.0"
+  },
+  "dependencies": {
+    "ethers": "^5.8.0"
+  }
+}
