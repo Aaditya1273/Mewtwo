@@ -25,6 +25,8 @@ export interface LingerHandlers {
     identity: Identity
     worldId: string
     realmId: string
+    /** Whether the server offers Bond preservation. Off by default. */
+    preservationEnabled: boolean
     echoes: Echo[]
     bonds: Bond[]
     activity: ReturnActivity
@@ -36,6 +38,8 @@ export interface LingerHandlers {
   onInteractionRejected: (echoId: string, error: string, message: string) => void
   onBondCreated: (bond: Bond) => void
   onBondAdded: (bond: Bond) => void
+  onPreservationUpdated: (bondId: string, status: string, consented: string[]) => void
+  onPreservationRejected: (bondId: string, error: string, message: string) => void
   onPresence: (players: LivePresence[], intensity: number) => void
   onConnectionChange: (connected: boolean) => void
 }
@@ -135,6 +139,8 @@ function attachRoomListeners(joined: Room, ownSessionId: string) {
       identity: decodeIdentity(payload?.identity),
       worldId: typeof payload?.worldId === 'string' ? payload.worldId : '',
       realmId: typeof payload?.realmId === 'string' ? payload.realmId : '',
+      // Defaults to false: an old or partial payload must never light up blockchain UI.
+      preservationEnabled: payload?.preservationEnabled === true,
       echoes: decodeEchoes(payload?.echoes),
       bonds: decodeBonds(payload?.bonds),
       activity: decodeActivity(payload?.activity)
@@ -173,6 +179,23 @@ function attachRoomListeners(joined: Room, ownSessionId: string) {
     const bond = decodeBond(payload?.bond)
     if (bond) handlers.onBondAdded(bond)
   })
+
+  joined.onMessage('preservationUpdated', (payload: any) => {
+    const bondId = text(payload?.bondId, '')
+    if (!bondId) return
+    const consented = Array.isArray(payload?.state?.consented)
+      ? payload.state.consented.filter((id: unknown) => typeof id === 'string')
+      : []
+    handlers.onPreservationUpdated(bondId, text(payload?.state?.status, 'NOT_PRESERVED'), consented)
+  })
+
+  joined.onMessage('preservationRejected', (payload: any) =>
+    handlers.onPreservationRejected(
+      text(payload?.bondId, ''),
+      text(payload?.error, 'INVALID'),
+      text(payload?.message, 'That did not work.')
+    )
+  )
 
   joined.onStateChange((state: any) => {
     // Exclude ourselves: the local player is rendered by the Decentraland client already.
@@ -278,4 +301,9 @@ export function sendInteraction(echoId: string, type: InteractionType) {
 /** Confirms the return panel was actually shown, so the watermark only then advances. */
 export function sendActivityRead() {
   return send('activityRead')
+}
+
+/** Consent to preserving a Bond. Both participants must send this. */
+export function sendPreserveBond(bondId: string) {
+  return send('preserveBond', { bondId })
 }

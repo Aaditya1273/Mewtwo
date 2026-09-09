@@ -20,10 +20,20 @@ export interface EchoCardModel {
   acted: '' | 'heart' | 'highfive' | 'read'
 }
 
+export type PreservationStatus = 'NOT_PRESERVED' | 'PRESERVING' | 'PRESERVED' | 'FAILED'
+
 export interface BondCardModel {
+  bondId: string
   number: number
   nameA: string
   nameB: string
+  /** The other person's name, for the "waiting for..." line. */
+  partnerName: string
+  /** Whether the preserve action should be offered at all. Off by default. */
+  canPreserve: boolean
+  status: PreservationStatus
+  /** True once this player has consented and is waiting on the other. */
+  awaitingPartner: boolean
 }
 
 export const ui = {
@@ -53,6 +63,12 @@ export const ui = {
 
   /** Transient one-line confirmation. Cleared by a timer, never queued. */
   toast: '',
+
+  /**
+   * Whether the server offers Bond preservation. False by default — LINGER is complete
+   * without it, and when it is off no blockchain UI exists at all.
+   */
+  preservationEnabled: false,
 
   /**
    * Developer diagnostic.
@@ -110,13 +126,32 @@ export function openReturnPanel(activity: ReturnActivity) {
   ui.overlay = 'return'
 }
 
-export function openBondCard(bond: Bond) {
+export function openBondCard(bond: Bond, selfId: string) {
+  const partner = bond.playerA.id === selfId ? bond.playerB : bond.playerA
   ui.bondCard = {
+    bondId: bond.id,
     number: bond.number,
     nameA: bond.playerA.name || 'Someone',
-    nameB: bond.playerB.name || 'Someone'
+    nameB: bond.playerB.name || 'Someone',
+    partnerName: partner.name || 'them',
+    canPreserve: ui.preservationEnabled,
+    status: 'NOT_PRESERVED',
+    awaitingPartner: false
   }
   ui.overlay = 'bond'
+}
+
+/** Apply a preservation update from the server. Ignored if a different Bond is showing. */
+export function setPreservation(
+  bondId: string,
+  status: PreservationStatus,
+  consentedIds: string[],
+  selfId: string
+) {
+  const card = ui.bondCard
+  if (!card || card.bondId !== bondId) return
+  card.status = status
+  card.awaitingPartner = status === 'NOT_PRESERVED' && consentedIds.indexOf(selfId) !== -1
 }
 
 export function closeOverlay() {

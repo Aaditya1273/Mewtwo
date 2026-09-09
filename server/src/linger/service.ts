@@ -2,6 +2,13 @@ import { randomUUID } from 'crypto'
 import { SocialPersistence } from './persistence/SocialPersistence'
 import { KeyedLock } from './domain/keyedLock'
 import {
+  BondPreservation,
+  PreservationState,
+  initialPreservationState,
+  isPreserveFailure
+} from './chain/BondPreservation'
+import { DisabledPreservation } from './chain/DisabledPreservation'
+import {
   Bond,
   Echo,
   Identity,
@@ -67,7 +74,12 @@ export class LingerService {
   constructor(
     private readonly store: SocialPersistence,
     private readonly now: Clock = () => Date.now(),
-    private readonly layout: WorldLayout = DEFAULT_LAYOUT
+    private readonly layout: WorldLayout = DEFAULT_LAYOUT,
+    /**
+     * Blockchain backend. Disabled by default — LINGER is fully playable without it, and
+     * every code path below treats a chain failure as an ordinary outcome.
+     */
+    private readonly preservation: BondPreservation = new DisabledPreservation()
   ) {}
 
   async init() {
@@ -364,6 +376,115 @@ export class LingerService {
   async listBonds(scope: WorldScope): Promise<Bond[]> {
     return this.store.listBonds(scope.worldId, 200)
   }
+
+  // === Bond preservation (optional, off-chain-first) ==========================
+
+  /** Whether the preserve action should be offered at all. */
+  get preservationEnabled(): boolean {
+    return this.preservation.enabled
+  }
+
+  get preservationNetwork(): string {
+    return this.preservation.network
+  }
+
+  /** Current preservation state for a Bond. Never null — an untouched Bond is NOT_PRESERVED. */
+  async getPreservation(bondId: string): Promise<PreservationState> {
+    const existing = await this.store.getPreservation(bondId)
+    return existing ?? initialPreservationState(this.now())
+  }
+
+  /**
+   * Record one participant's consent to preserve a Bond, and dispatch once both agree.
+   *
+   * CONSENT: only the two identities recorded on the Bond may consent, and the caller's
+   * identity comes from the verified session — never from a payload. An on-chain
+   * relationship is never created from one person's decision alone.
+   *
+   * ORDERING: the Bond already exists and is untouched by everything here. Preservation is
+   * an annotation. A failure leaves the Bond exactly as it was.
+   */
+  async consentToPreserve(actor: Identity, bond: Bond): Promise<Result<PreservationState>> {
+    const identity = normaliseIdentity(actor)
+    if (!identity) return err('INVALID', 'A valid identity is required.')
+
+    const isParticipant = bond.playerA.id === identity.id || bond.playerB.id === identity.id
+    if (!isParticipant) {
+      return err('FORBIDDEN', 'Only the two people in a Bond can preserve it.')
+    }
+
+    if (!this.preservation.enabled) {
+      return err('INVALID', 'Preservation is not available right now.')
+    }
+
+    // Serialised per Bond: two people tapping "Preserve" at the same moment must not
+    // produce two dispatches.
+    return this.lock.run(`preserve:${bond.id}`, () => this.consentLocked(identity, bond))
+  }
+
+  private async consentLocked(identity: Identity, bond: Bond): Promise<Result<PreservationState>> {
+    const now = this.now()
+    const state = (await this.store.getPreservation(bond.id)) ?? initialPreservationState(now)
+
+    if (state.status === 'PRESERVED') {
+      return err('DUPLICATE', 'This Bond is already preserved.')
+    }
+    if (state.status === 'PRESERVING') {
+      return err('DUPLICATE', 'This Bond is being preserved right now.')
+    }
+
+    if (state.consented.indexOf(identity.id) === -1) {
+      state.consented.push(identity.id)
+    }
+    state.updatedAt = now
+
+    const bothConsented =
+      state.consented.indexOf(bond.playerA.id) !== -1 &&
+      state.consented.indexOf(bond.playerB.id) !== -1
+
+    if (!bothConsented) {
+      // Waiting on the other person. Deliberately still NOT_PRESERVED — nothing has been
+      // attempted, and the UI should say it is waiting rather than working.
+      state.status = 'NOT_PRESERVED'
+      return ok(await this.store.savePreservation(bond.id, state))
+    }
+
+    state.status = 'PRESERVING'
+    state.attempts += 1
+    state.error = undefined
+    await this.store.savePreservation(bond.id, state)
+
+    const outcome = await this.preservation.preserve({
+      bond,
+      participants: [bond.playerA, bond.playerB]
+    })
+
+    const settled: PreservationState = {
+      ...state,
+      updatedAt: this.now()
+    }
+
+    if (isPreserveFailure(outcome)) {
+      settled.status = 'FAILED'
+      settled.error = outcome.error
+      // Consent is kept, so a retry does not have to ask both people again.
+    } else {
+      // Only now, with a confirmation actually in hand, is this PRESERVED.
+      settled.status = 'PRESERVED'
+      settled.proof = outcome.proof
+      settled.error = undefined
+    }
+
+    return ok(await this.store.savePreservation(bond.id, settled))
+  }
+
+  /** Find a Bond by id within a World. Used to authorise a preservation request. */
+  async findBondById(scope: WorldScope, bondId: unknown): Promise<Bond | null> {
+    if (typeof bondId !== 'string' || !bondId) return null
+    const bonds = await this.store.listBonds(scope.worldId, 500)
+    return bonds.find((b) => b.id === bondId) ?? null
+  }
+
 
   // === Vitality ================================================================
 

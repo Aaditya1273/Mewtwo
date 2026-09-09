@@ -1,5 +1,6 @@
 import { Bond, Echo, EchoInteraction, PlayerActivity } from '../domain/types'
 import { bondPairKey } from '../domain/rules'
+import { PreservationState } from '../chain/BondPreservation'
 import { SocialPersistence } from './SocialPersistence'
 
 /**
@@ -198,6 +199,19 @@ export class MemoryPersistence implements SocialPersistence {
     return next
   }
 
+  /** bondId -> preservation state. Separate from the Bond, which never changes. */
+  private preservation = new Map<string, PreservationState>()
+
+  async getPreservation(bondId: string): Promise<PreservationState | null> {
+    const found = this.preservation.get(bondId)
+    return found ? { ...found, consented: [...found.consented] } : null
+  }
+
+  async savePreservation(bondId: string, state: PreservationState): Promise<PreservationState> {
+    this.preservation.set(bondId, { ...state, consented: [...state.consented] })
+    return { ...state, consented: [...state.consented] }
+  }
+
   // --- Player activity ---------------------------------------------------------
 
   async getActivity(worldId: string, identityId: string): Promise<PlayerActivity | null> {
@@ -218,5 +232,6 @@ export class MemoryPersistence implements SocialPersistence {
     this.bondPairs.clear()
     this.bondCounters.clear()
     this.activity.clear()
+    this.preservation.clear()
   }
 }

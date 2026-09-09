@@ -141,6 +141,9 @@ export class LingerRoom extends Room<LingerState> {
 
     client.send('welcome', {
       identity,
+      // Whether to offer the preserve action at all. Off by default.
+      preservationEnabled: this.service.preservationEnabled,
+      preservationNetwork: this.service.preservationNetwork,
       // The client shows this so a player can see whether they are signed in as their
       // wallet or browsing as a guest.
       authenticated: identity.hasWallet,
@@ -242,6 +245,47 @@ export class LingerRoom extends Room<LingerState> {
       // client's optimistic update, so a rejected or adjusted count self-corrects.
       this.broadcast('echoUpdated', { echo: result.value })
       await this.refreshVitality()
+    })
+
+    /**
+     * A participant consents to preserving a Bond on-chain.
+     *
+     * The identity is the verified session identity — a client cannot consent on anyone
+     * else's behalf. The gameplay Bond is never modified by any outcome here.
+     */
+    this.onMessage('preserveBond', async (client, message: any) => {
+      const identity = this.sessionIdentities.get(client.sessionId)
+      if (!identity) return
+
+      const bond = await this.service.findBondById(this.scope, message?.bondId)
+      if (!bond) {
+        client.send('preservationRejected', {
+          bondId: message?.bondId,
+          error: 'NOT_FOUND',
+          message: 'That Bond is not here.'
+        })
+        return
+      }
+
+      const result = await this.service.consentToPreserve(identity, bond)
+      if (isFailure(result)) {
+        client.send('preservationRejected', {
+          bondId: bond.id,
+          error: result.error,
+          message: result.message
+        })
+        return
+      }
+
+      // Tell both participants, so the second person sees that the first is waiting.
+      const update = { bondId: bond.id, state: result.value }
+      for (const other of this.clients) {
+        const who = this.sessionIdentities.get(other.sessionId)
+        if (!who) continue
+        if (who.id === bond.playerA.id || who.id === bond.playerB.id) {
+          other.send('preservationUpdated', update)
+        }
+      }
     })
 
     /** The client confirms it has actually displayed the return panel. */

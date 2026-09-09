@@ -67,7 +67,7 @@ World is never blank on a first visit.
 
 ```bash
 cd server
-npm test              # 118 unit tests covering every product rule
+npm test              # 157 unit tests covering every product rule
 npm run test:journey     # two real clients drive the whole loop over the live protocol
 npm run test:resilience  # server restart, reconnect, and mid-Bond disconnect
 npm run test:all         # all three
@@ -187,6 +187,7 @@ Server configuration:
 | `LINGER_REQUIRE_SIGNED_AUTH` | `false` | refuse joins without a verified signature |
 | `LINGER_TICKET_TTL_SECONDS` | `60` | how long a join ticket stays redeemable |
 | `LINGER_ALLOW_DEV_AUTH` | unset | trusts an identity header — **never in production** |
+| `LINGER_CHAIN_ENABLED` | `false` | optional Bond preservation on Polygon |
 | `MONITOR_PASSWORD` | unset | Colyseus monitor is disabled when unset |
 | `PORT` | `2567` | |
 
@@ -202,7 +203,7 @@ screen at once and never more than one modal. Nothing requires a keyboard, preci
 aiming, or an inventory. The wave is a single large button rather than an emote wheel,
 because emotes are not reachable one-thumbed.
 
-A first visit downloads about **534 KB** — the production bundle — and no 3-D assets at
+A first visit downloads about **537 KB** — the production bundle — and no 3-D assets at
 all. See [`PERFORMANCE.md`](./PERFORMANCE.md) for the entity budget, the network rules, and
 an honest list of what has and has not been measured. **No frame rate is claimed anywhere
 in this repository**, because LINGER has not been profiled on a physical device.
@@ -259,7 +260,12 @@ multiplayer presence, real-player Bonds, permanent Bond stones, mobile UI, a per
 pass, a hardening pass, and verified signed authentication — 118 unit tests plus two live
 integration suites that authenticate with real Decentraland signatures.
 
-Not built yet, deliberately: the durable Mongo adapter, the blockchain provenance layer,
+Web3 is designed and abstracted but **not live**: `LINGER_CHAIN_ENABLED` defaults to
+`false`, no contract is deployed, and nothing about the experience depends on it. See
+[`WEB3_ARCHITECTURE.md`](./WEB3_ARCHITECTURE.md) — the target is a Polygon meta-transaction
+so a player signs and pays no gas, and preservation requires both people to agree.
+
+Not built yet, deliberately: the durable Mongo adapter, the on-chain contract itself,
 Kindling, and cross-World features. The core loop comes first.
 
 ---

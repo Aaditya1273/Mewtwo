@@ -1,4 +1,5 @@
 import { Bond, Echo, EchoInteraction, PlayerActivity } from '../domain/types'
+import { PreservationState } from '../chain/BondPreservation'
 
 /**
  * The storage seam.
@@ -53,6 +54,14 @@ export interface SocialPersistence {
   countBondsBy(worldId: string, identityId: string, since: number): Promise<number>
   /** Next sequential Bond number for a World. Must be atomic per World. */
   nextBondNumber(worldId: string): Promise<number>
+
+  /**
+   * Preservation state for a Bond, or null if it has never been touched.
+   * Stored separately from the Bond so the gameplay record is never rewritten by a
+   * chain outcome — the Bond is the source of truth and stays immutable.
+   */
+  getPreservation(bondId: string): Promise<PreservationState | null>
+  savePreservation(bondId: string, state: PreservationState): Promise<PreservationState>
 
   // --- Player activity ---------------------------------------------------------
 

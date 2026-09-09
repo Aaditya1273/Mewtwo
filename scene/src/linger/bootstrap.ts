@@ -24,7 +24,7 @@ import { handleEchoTap, initEchoInteraction, setInteractionSender } from './echo
 import { localGenesisEchoes } from './echo/genesis'
 import { addBondStone, setBondStones } from './bond/bondRenderer'
 import { clearWave, setLivePresence, startPresenceSystem, wave } from './presence/presenceSystem'
-import { onWave } from './ui/panels'
+import { onPreserve, onWave } from './ui/panels'
 import { initUi, toast } from './ui/root'
 import {
   connect,
@@ -34,6 +34,7 @@ import {
   sendActivityRead,
   sendCreateEcho,
   sendInteraction,
+  sendPreserveBond,
   setDisplayName,
   setRealm
 } from './network/lingerClient'
@@ -43,6 +44,7 @@ import {
   openBondCard,
   openReturnPanel,
   setLinger,
+  setPreservation,
   setPrompt,
   ui
 } from './ui/state'
@@ -82,6 +84,7 @@ export function bootstrapLinger() {
   ui.livePlayers = 1
 
   onWave(wave)
+  onPreserve((bondId) => sendPreserveBond(bondId))
 
   // If an Echo vanishes while its card is open — expiry, or a server rejection — close
   // the card rather than leaving the player looking at a record that no longer exists.
@@ -146,7 +149,17 @@ function wireNetwork() {
       ui.diag.authenticated = isAuthenticated()
     },
 
-    onWelcome: ({ echoes, bonds, activity, worldId, realmId: serverRealm, identity: authIdentity }) => {
+    onWelcome: ({
+      echoes,
+      bonds,
+      activity,
+      worldId,
+      realmId: serverRealm,
+      identity: authIdentity,
+      preservationEnabled
+    }) => {
+      // When the chain layer is off, no blockchain UI is rendered anywhere.
+      ui.preservationEnabled = preservationEnabled
       // Everything the diagnostic shows comes from the server, so two devices comparing
       // panels are comparing what the server actually believes.
       ui.diag.worldId = worldId
@@ -238,7 +251,17 @@ function wireNetwork() {
     onBondCreated: (bond) => {
       addBondStone(bond)
       clearWave()
-      openBondCard(bond)
+      openBondCard(bond, identity.id)
+    },
+
+    onPreservationUpdated: (bondId, status, consented) => {
+      setPreservation(bondId, status as any, consented, identity.id)
+      if (status === 'PRESERVED') toast('This memory is permanent now.', 4000)
+    },
+
+    onPreservationRejected: (_bondId, _error, message) => {
+      // The Bond is untouched by any of this — say so rather than showing a bare error.
+      toast(message, 3600)
     },
 
     onBondAdded: (bond) => {

@@ -21,6 +21,10 @@ import { createLingerRouter } from './linger/api/routes'
 import { devAuthEnabled, resolveIdentity } from './linger/api/identity'
 import { seedGenesisEchoes } from './linger/genesis'
 import { TicketStore } from './linger/auth/ticketStore'
+import { readChainConfig, validateChainConfig } from './linger/chain/chainConfig'
+import { DisabledPreservation } from './linger/chain/DisabledPreservation'
+import { MetaTransactionPreservation } from './linger/chain/MetaTransactionPreservation'
+import { BondPreservation } from './linger/chain/BondPreservation'
 
 function buildPersistence(): SocialPersistence {
   if (config.persistence === 'mongo') {
@@ -34,8 +38,29 @@ function buildPersistence(): SocialPersistence {
   return new MemoryPersistence()
 }
 
+/**
+ * Blockchain backend.
+ *
+ * Disabled unless explicitly turned on AND fully configured. A half-configured chain layer
+ * refuses to start rather than failing later, in front of an audience.
+ */
+function buildPreservation(): BondPreservation {
+  const chain = readChainConfig()
+  if (!chain.enabled) return new DisabledPreservation()
+
+  const missing = validateChainConfig(chain)
+  if (missing.length > 0) {
+    throw new Error(
+      `LINGER_CHAIN_ENABLED=true but these are unset: ${missing.join(', ')}. ` +
+        'Configure them, or unset LINGER_CHAIN_ENABLED to run without the chain layer.'
+    )
+  }
+  return new MetaTransactionPreservation(chain)
+}
+
 const persistence = buildPersistence()
-const service = new LingerService(persistence)
+const preservation = buildPreservation()
+const service = new LingerService(persistence, () => Date.now(), undefined, preservation)
 
 // Tickets are minted by the REST auth route and redeemed by the room's onAuth, so both
 // sides must share one store.
@@ -140,6 +165,11 @@ export default Arena({
       )
     }
 
+    console.log(
+      `[linger] bond preservation: ${
+        preservation.enabled ? `enabled (${preservation.network})` : 'disabled'
+      }`
+    )
     console.log(`[linger] world=${config.worldId} persistence=${config.persistence}`)
   }
 })

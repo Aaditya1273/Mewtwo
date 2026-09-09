@@ -20,6 +20,11 @@ export function onWave(handler: () => void) {
   waveHandler = handler
 }
 
+let preserveHandler: (bondId: string) => void = () => {}
+export function onPreserve(handler: (bondId: string) => void) {
+  preserveHandler = handler
+}
+
 let echoActionHandler: (action: EchoAction) => void = () => {}
 export function onEchoAction(handler: (action: EchoAction) => void) {
   echoActionHandler = handler
@@ -489,7 +494,111 @@ export function BondCard() {
           color: palette.inkDim
         }}
       />
-      <ActionButton label="Beautiful" color={palette.ink} width="70%" onPress={closeOverlay} />
+
+      <PreserveSection />
+
+      <ActionButton
+        label={bond.status === 'PRESERVED' ? 'Beautiful' : 'Not now'}
+        color={palette.ink}
+        width="70%"
+        onPress={closeOverlay}
+      />
     </Card>
+  )
+}
+
+/**
+ * Optional permanence.
+ *
+ * Only rendered when the server says preservation is available; otherwise the Bond card is
+ * exactly what it always was and no blockchain concept appears anywhere in the product.
+ *
+ * The language stays memory / bond / preserve. Never mint, token, asset, or gas — a player
+ * is recording a memory, not buying anything.
+ *
+ * One explanation, one action, one status. Nothing here can remove the Bond.
+ */
+function PreserveSection() {
+  const bond = ui.bondCard
+  if (!bond || !bond.canPreserve) return <UiEntity uiTransform={{ width: 0, height: 0 }} />
+
+  if (bond.status === 'PRESERVED') {
+    return (
+      <UiEntity
+        uiTransform={{ width: '100%', height: 40, justifyContent: 'center' }}
+        uiText={{
+          value: `✓  Bond #${String(bond.number).padStart(4, '0')} preserved`,
+          fontSize: typeScale.body,
+          color: palette.emberSoft
+        }}
+      />
+    )
+  }
+
+  if (bond.status === 'PRESERVING') {
+    return (
+      <UiEntity
+        uiTransform={{ width: '100%', height: 40, justifyContent: 'center' }}
+        uiText={{ value: 'Preserving...', fontSize: typeScale.body, color: palette.inkDim }}
+      />
+    )
+  }
+
+  if (bond.status === 'FAILED') {
+    return (
+      <UiEntity
+        uiTransform={{ width: '100%', height: 86, flexDirection: 'column', alignItems: 'center' }}
+      >
+        <UiEntity
+          uiTransform={{ width: '100%', height: 38, justifyContent: 'center' }}
+          uiText={{
+            value: "Your Bond is still here.\nWe couldn't preserve it yet.",
+            fontSize: typeScale.caption,
+            color: palette.inkDim
+          }}
+        />
+        <ActionButton
+          label="Try again"
+          color={palette.bond}
+          width="70%"
+          onPress={() => preserveHandler(bond.bondId)}
+        />
+      </UiEntity>
+    )
+  }
+
+  // NOT_PRESERVED — either offer the action, or say we are waiting on the other person.
+  if (bond.awaitingPartner) {
+    return (
+      <UiEntity
+        uiTransform={{ width: '100%', height: 40, justifyContent: 'center' }}
+        uiText={{
+          value: `Waiting for ${bond.partnerName} to agree...`,
+          fontSize: typeScale.caption,
+          color: palette.inkDim
+        }}
+      />
+    )
+  }
+
+  return (
+    <UiEntity
+      uiTransform={{ width: '100%', height: 104, flexDirection: 'column', alignItems: 'center' }}
+    >
+      <UiEntity
+        uiTransform={{ width: '100%', height: 34, justifyContent: 'center' }}
+        uiText={{
+          value: 'This memory can outlast the World.\nBoth of you must agree.',
+          fontSize: typeScale.caption,
+          color: palette.inkDim
+        }}
+      />
+      <ActionButton
+        label="Preserve this memory"
+        color={palette.bond}
+        width="80%"
+        onPress={() => preserveHandler(bond.bondId)}
+      />
+    </UiEntity>
   )
 }
