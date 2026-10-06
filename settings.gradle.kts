@@ -13,6 +13,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Solana Kotlin Compose Scaffold"
+rootProject.name = "PRESENCE"
 include(":app")
  

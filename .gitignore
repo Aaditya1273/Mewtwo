@@ -8,3 +8,13 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# PRESENCE
+/.dev
+/target
+/node_modules
+backend/.venv
+backend/*.db*
+__pycache__/
+.env
+/.anchor
