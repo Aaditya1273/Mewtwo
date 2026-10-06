@@ -1,0 +1,19 @@
+[
+  {
+    "mission_id": "daily-focus",
+    "name": "Daily Focus Proof",
+    "steps": [
+      "Stay in the session for 60 seconds",
+      "Confirm each pulse as it appears (6 total)",
+      "Keep PRESENCE in the foreground until the final checkpoint"
+    ],
+    "required_assurance": "P2",
+    "duration_seconds": 60,
+    "required_checkpoints": 6,
+    "checkpoint_interval_seconds": 10,
+    "min_interactions_per_checkpoint": 1,
+    "witness_required": false,
+    "max_claims_per_identity_per_day": 1,
+    "reward": { "xp": 180 }
+  }
+]

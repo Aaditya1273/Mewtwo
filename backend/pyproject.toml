@@ -1,0 +1,22 @@
+[project]
+name = "attest"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "ATTEST engine: server-authoritative verification for PRESENCE"
+dependencies = [
+    "base58>=2.1.1",
+    "cryptography>=50.0.2",
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "solders>=0.29.0",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["localnet: needs a local validator with the presence program deployed (scripts/e2e_localnet.sh)"]
