@@ -1,581 +1,2102 @@
-<div align="center">
+# PRESENCE
 
-<img width="1672" height="941" alt="ARGUS Dashboard — AI Agent Runtime Governance Control Plane" src="https://github.com/user-attachments/assets/bbaade90-0c39-4862-ba23-4126051ebe2f" />
+### Trusted participation infrastructure for the open mobile economy.
 
-# ARGUS — AI Agent Runtime Governance & Cost Firewall
+**Seeker gives you trusted device identity. ATTEST verifies the process behind your actions. PRESENCE turns verified participation into reputation, access, and rewards.**
 
-**The autonomous runtime control plane that observes, meters, and enforces policy on every MCP tool call your AI agents make — in real time.**
-
-ARGUS intercepts every Claude / MCP tool call, evaluates it against 9 governance plugins, meters it against a live cost budget, and streams the result to an OpenTelemetry pipeline — with a one-click kill switch when an agent goes rogue.
-
-[![Live App](https://img.shields.io/badge/Live%20App-argus--signoz.netlify.app-2ea44f?logo=vercel&logoColor=white)](https://argus-signoz.netlify.app/)
-[![Demo Video](https://img.shields.io/badge/Demo-Watch%20Walkthrough-FF0000?logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1GVkP8SiEnUFbBV9UFtuOE0PdfDZZbAdr/view)
-[![GitHub Repo](https://img.shields.io/badge/GitHub-Aaditya1273%2FArgus-181717?logo=github)](https://github.com/Aaditya1273/Argus)
-[![License](https://img.shields.io/github/license/Aaditya1273/Argus?color=blue)](./LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](https://go.dev)
-[![Next.js](https://img.shields.io/badge/Next.js-15%2F16-black?logo=next.js)](https://nextjs.org)
-[![MCP Protocol](https://img.shields.io/badge/MCP-2024--11--05-orange)](https://modelcontextprotocol.io)
-[![OAuth 2.1](https://img.shields.io/badge/OAuth-2.1%20%2B%20PKCE-ea580c)](https://oauth.net/2.1/)
-[![Observability](https://img.shields.io/badge/OTel%20%E2%86%92-SigNoz%20Cloud-orange?logo=opentelemetry&logoColor=white)](https://signoz.io)
-[![Security Policy](https://img.shields.io/badge/Security-Policy-critical?logo=shieldsdotio)](./SECURITY.md)
-
-**[🚀 Live Dashboard](https://argus-signoz.netlify.app/) · [🎥 Video Walkthrough](https://drive.google.com/file/d/1GVkP8SiEnUFbBV9UFtuOE0PdfDZZbAdr/view) · [📦 Source](https://github.com/Aaditya1273/Argus) · [🔌 Connect Claude](#-connect-claude-in-under-2-minutes) · [🛡️ Security](./SECURITY.md)**
-
-</div>
+> **ACTION → EVIDENCE → TRUST → VALUE → REPUTATION**
 
 ---
 
-## Table of Contents
+## Why PRESENCE Exists
 
-1. [Executive Summary & Impact Metrics](#-executive-summary--impact-metrics)
-2. [Architecture & Data Flow](#-architecture--data-flow)
-3. [Technical Deep-Dive](#-technical-deep-dive-flagship-features)
-4. [Tech Stack](#-tech-stack)
-5. [Directory Structure](#-directory-structure)
-6. [Quick Start](#-quick-start)
-7. [Connect Claude](#-connect-claude-in-under-2-minutes)
-8. [DataHub Metadata-Aware Governance](#-datahub-metadata-aware-governance)
-9. [Testing & Verification](#-testing--verification)
-10. [Security Controls & Roadmap](#-security-controls--roadmap)
+Mobile ecosystems are becoming increasingly programmable.
 
----
+Apps can already verify:
 
-## 🎯 Executive Summary & Impact Metrics
+- wallet ownership
+- signatures
+- transactions
+- token balances
+- NFT ownership
+- account activity
 
-### The Problem
+But there is a deeper problem:
 
-Autonomous AI agents built on the **Model Context Protocol (MCP)** call tools — file reads, shell commands, code search — with no metering, no budget enforcement, and no behavioral baseline. A single prompt-injected loop or a stuck agent can silently burn thousands of tool calls, exfiltrate data via unrestricted `run_command` execution, or blow through an API budget before a human notices. There is no **runtime control plane** standing between the agent's intent and the tool's execution.
+### **A transaction does not necessarily prove that the intended action actually happened.**
 
-### The Solution
+A wallet signature can prove that a key authorized something.
 
-ARGUS sits as a **governed MCP server** between any MCP client (Claude Web, Claude Desktop, Claude Code, Cursor, VS Code) and the underlying tools. Every call is intercepted at the transport layer, evaluated by a **governance rule engine** (Z-score anomaly detection, loop/recursion detection, budget enforcement), metered by a **cost firewall accumulator**, exported as an **OpenTelemetry span** to SigNoz Cloud, and — if a rule fires — killed, paused, or circuit-broken in real time via WebSocket.
+It does not inherently prove:
 
-### Benchmark Table
+- that a user completed the intended process
+- that the action happened continuously
+- that the interaction was not replayed
+- that the same device did not farm the action repeatedly
+- that a participant actually followed the required workflow
+- that a high-value action deserves a higher level of assurance
 
-| Metric | Value | Mechanism |
-|---|---|---|
-| Tool-call interception latency | Sub-millisecond overhead | In-process middleware on `/api/v1/mcp/bearer` |
-| Governance plugins active | 9 + 5 DataHub metadata-aware (when configured) | Zero-config rule engine + optional DataHub context |
-| Live agent state propagation | < 1s to Mission Control UI | Gorilla WebSocket broadcast |
-| OAuth 2.1 handshake | 8-step PKCE (S256) flow | RFC 9207–compliant discovery |
-| Cost-firewall granularity | Per-session, per-tool-call | Budget accumulator, $5–$100 tiers |
-| Anomaly scoring | 0–100 Z-score deviation | Agent DNA behavioral fingerprinting |
-| Telemetry export | OTLP/HTTP → SigNoz Cloud | `BatchSpanProcessor` + `otlptracehttp` |
+This creates a trust gap between:
 
----
-
-## 🏗️ Architecture & Data Flow
-
-### System Architecture
-
-```mermaid
-flowchart TB
-    subgraph Clients["MCP Clients"]
-        CW["Claude Web<br/>(OAuth 2.1 + PKCE)"]
-        CD["Claude Desktop<br/>(SSE config)"]
-        CC["Claude Code CLI<br/>(HTTP transport)"]
-        CUR["Cursor / VS Code<br/>(SSE)"]
-    end
-
-    subgraph Backend["ARGUS Backend :8080 (Go 1.24+)"]
-        OAUTH["OAuth 2.1 Authorization Server<br/>/.well-known/*"]
-        MCP["MCP Server<br/>/api/v1/mcp · /mcp/bearer"]
-        WS["WebSocket Gateway<br/>/api/v1/argus/ws"]
-        REST["REST API<br/>/api/v1/argus/*"]
-        GOV["Governance Engine<br/>9 plugins + 5 DataHub-aware"]
-        COST["Cost Firewall<br/>per-session budget accumulator"]
-        DNA["Agent DNA<br/>Z-score anomaly scoring"]
-        REPLAY["Prompt Replay<br/>real OpenAI call"]
-        TEL["OTel TracerProvider"]
-        DH["DataHub MCP Client<br/>metadata-aware plugins"]
-    end
-
-    subgraph Obs["Observability"]
-        SIGNOZ["SigNoz Cloud<br/>OTLP/HTTP ingest"]
-    end
-
-    subgraph DHub["DataHub Context Platform"]
-        DHS["DataHub MCP Server<br/>catalog · lineage · tags"]
-    end
-
-    subgraph UI["ARGUS Dashboard :3000 (Next.js 15/16)"]
-        CF_UI["Cost Firewall"]
-        MC_UI["Mission Control"]
-        GOV_UI["Governance"]
-        DNA_UI["Agent DNA"]
-        DH_UI["DataHub Context"]
-        PLUG_UI["Plugins"]
-        REPLAY_UI["Replay"]
-    end
-
-    CW -->|"1. OAuth discovery + PKCE"| OAUTH
-    CD -->|"2. SSE"| MCP
-    CC -->|"3. HTTP"| MCP
-    CUR -->|"4. SSE"| MCP
-
-    OAUTH -->|"issues bearer token"| MCP
-    MCP -->|"every tool call"| GOV
-    GOV -->|"cost + rules"| COST
-    GOV -->|"behavior fingerprint"| DNA
-    GOV -->|"violation event"| TEL
-    COST -->|"span: mcp.tool_call"| TEL
-    TEL -->|"OTLP/HTTP"| SIGNOZ
-
-    GOV -->|"kill / pause / resume"| WS
-    WS -->|"live push < 1s"| MC_UI
-    REST --> CF_UI
-    REST --> GOV_UI
-    REST --> DNA_UI
-    REST --> DH_UI
-    REST --> PLUG_UI
-    REPLAY --> REPLAY_UI
-
-    GOV -->|"ownership · lineage-PII · policy · quality · deprecation"| DH
-    DH -->|"MCP tools: search / get_lineage / add_tags"| DHS
-    DHS -->|"context graph"| DH
-    DH -->|"audit tags: ARGUS_ALLOW / WARN / BLOCK"| DHS
-
-    style Backend fill:#1a1a2e,color:#fff,stroke:#ea580c
-    style Obs fill:#2d1b00,color:#fff,stroke:#ea580c
-    style UI fill:#0f172a,color:#fff,stroke:#00ADD8
+```text
+INTENTION
+   ↓
+SIGNATURE
+   ↓
+TRANSACTION
 ```
 
-### OAuth 2.1 + PKCE Sequence (Claude Web)
+and:
+
+```text
+REAL PARTICIPATION
+   ↓
+PROCESS
+   ↓
+EVIDENCE
+   ↓
+VERIFIABLE OUTCOME
+```
+
+PRESENCE is designed for the second layer.
+
+---
+
+# The Problem
+
+## Today's mobile economy can verify activity, but not necessarily participation quality.
+
+Consider a sponsor paying for 1,000 users to try an application.
+
+A conventional system may measure:
+
+```text
+1,000 installs
+1,000 opens
+1,000 signatures
+1,000 transactions
+```
+
+But the sponsor actually wants:
+
+```text
+1,000 meaningful activations
+```
+
+Those are not equivalent.
+
+A user can:
+
+- open an application and immediately leave
+- automate repetitive actions
+- replay a previous claim
+- farm quests
+- use multiple wallets
+- satisfy superficial transaction requirements
+- generate activity without meaningful participation
+
+The result is a broken incentive loop.
+
+### Users
+
+Receive:
+
+- temporary points
+- disconnected quests
+- short-lived rewards
+- reputation that rarely travels between applications
+
+### Applications
+
+Receive:
+
+- noisy activity
+- difficult-to-compare engagement
+- fragmented fraud systems
+- duplicated verification infrastructure
+
+### Sponsors
+
+Pay for:
+
+- impressions
+- clicks
+- installs
+- transactions
+
+when what they actually value is:
+
+> **verified outcomes.**
+
+---
+
+# The PRESENCE Thesis
+
+PRESENCE introduces a layer between **intention** and **verified participation**.
+
+Instead of asking only:
+
+> "Did this wallet sign?"
+
+PRESENCE asks:
+
+> **"What evidence was generated while this action was being performed, and does that evidence satisfy the policy required for this outcome?"**
+
+The architecture becomes:
+
+```text
+USER INTENTION
+      │
+      ▼
+   MISSION
+      │
+      ▼
+  POLICY
+      │
+      ▼
+  EVIDENCE
+      │
+      ▼
+  ATTESTATION
+      │
+      ▼
+ VERIFIED ACTION
+      │
+      ├──────────────► REWARD
+      │
+      ├──────────────► REPUTATION
+      │
+      └──────────────► ACCESS
+```
+
+PRESENCE does **not** attempt to prove biological personhood.
+
+It creates **policy-defined assurance around participation**.
+
+---
+
+# What PRESENCE Is
+
+PRESENCE is a trusted participation layer for mobile applications.
+
+It combines:
+
+- Seeker identity
+- wallet authorization
+- bounded session integrity
+- process evidence
+- optional co-presence
+- programmable mission policies
+- on-chain attestations
+- portable reputation
+
+into a single verification flow.
+
+---
+
+# What PRESENCE Is Not
+
+PRESENCE is intentionally **not**:
+
+- a generic quest board
+- a points farming application
+- a proof-of-human oracle
+- a claim of perfect bot detection
+- a biological personhood system
+- a surveillance network
+- a location-selling marketplace
+- a replacement for Solana Mobile Activity Tracking
+- a rebuilt Seeker operating system
+
+The system makes a narrower and more defensible claim:
+
+> **PRESENCE verifies whether a bounded participation process satisfied a predefined assurance policy.**
+
+---
+
+# Core Architecture
+
+```mermaid
+flowchart TD
+
+    U[Participant] --> P[PRESENCE Mobile App]
+
+    P --> MWA[Mobile Wallet Adapter]
+    MWA --> SV[Seeker Seed Vault]
+    SV --> SIWS[SIWS Authorization]
+
+    P --> E[Evidence Collector]
+
+    E --> C1[Checkpoint 1]
+    C1 --> C2[Checkpoint 2]
+    C2 --> C3[Checkpoint 3]
+    C3 --> C4[Checkpoint 4]
+    C4 --> C5[Checkpoint 5]
+    C5 --> C6[Checkpoint 6]
+
+    C6 --> ER[Evidence Root]
+
+    SIWS --> V[ATTEST Verification Engine]
+    ER --> V
+
+    V --> POLICY[Mission Policy Engine]
+
+    POLICY --> PASS{Policy Satisfied?}
+
+    PASS -->|Yes| A[Daily Attestation]
+    PASS -->|No| R[Reject]
+
+    A --> REP[Reputation]
+    A --> REWARD[Reward Settlement]
+    A --> RECEIPT[Trust Receipt]
+
+    RECEIPT --> U
+```
+
+---
+
+# The Trust Stack
+
+PRESENCE uses progressive assurance.
+
+Not every action requires the same amount of trust.
+
+A low-value action may only need verified Seeker eligibility.
+
+A high-value physical event may require corroborated participation.
+
+Therefore:
+
+> **Higher value → higher assurance.**
+
+---
+
+## P1 — VERIFIED
+
+Establishes:
+
+- Seeker eligibility
+- SGT relationship
+- wallet authorization
+- claim eligibility
+
+Conceptually:
+
+```text
+Seeker Device
+      │
+      ▼
+SGT
+      │
+      ▼
+SIWS
+      │
+      ▼
+VERIFIED PARTICIPANT
+```
+
+P1 answers:
+
+> **"Is this an eligible Seeker participant?"**
+
+---
+
+# P2 — CONTINUOUS
+
+P2 adds bounded process evidence.
+
+A mission generates a sequence of evidence checkpoints.
+
+```text
+START
+  │
+  ▼
+C1 ──► C2 ──► C3 ──► C4 ──► C5 ──► C6
+                                      │
+                                      ▼
+                               EVIDENCE ROOT
+```
+
+The system can establish that the required process produced a continuous evidence chain within the defined session.
+
+P2 answers:
+
+> **"Did this participant complete the required process under the mission policy?"**
+
+P2 is the primary PRESENCE demonstration layer.
+
+---
+
+# P3 — WITNESSED
+
+P3 adds optional multi-party corroboration.
+
+Example:
+
+```text
+Participant A
+      │
+      │ challenge
+      ▼
+Participant B
+
+      +
+
+Participant C
+
+      │
+      ▼
+Witness Quorum
+```
+
+A mission may require:
+
+```text
+2-of-3 independent witnesses
+60-second bounded session
+fresh challenge
+```
+
+P3 does **not** claim absolute location truth or biological presence.
+
+It means:
+
+> **The configured co-presence policy was satisfied.**
+
+---
+
+# P4 — HIGH ASSURANCE
+
+P4 is reserved for higher-value or higher-risk workflows.
+
+Potential sources include:
+
+- stronger hardware-backed signals
+- stronger device attestation
+- trusted ecosystem infrastructure
+- additional policy requirements
+
+P4 is a future assurance layer.
+
+PRESENCE does not claim that every P4 primitive is implemented today.
+
+---
+
+# Assurance as a Service
+
+The important abstraction is not "one proof fits everything."
+
+It is:
+
+```text
+MISSION VALUE
+     │
+     ▼
+REQUIRED ASSURANCE
+     │
+     ├── P1
+     ├── P2
+     ├── P3
+     └── P4
+```
+
+A sponsor chooses how much assurance its outcome requires.
+
+For example:
+
+| Mission | Assurance |
+|---|---|
+| Explore an app | P1 |
+| Complete onboarding | P2 |
+| Complete a meaningful workflow | P2 |
+| Attend an event | P3 |
+| High-value physical claim | P3/P4 |
+| High-risk financial action | P4 |
+
+This makes trust programmable.
+
+---
+
+# Mission Policy
+
+Every PRESENCE mission is governed by a policy.
+
+A policy describes:
+
+```text
+WHAT
+HOW
+HOW LONG
+WHAT EVIDENCE
+WHAT ASSURANCE
+WHAT REWARD
+WHAT FRAUD RULES
+```
+
+Example:
+
+```yaml
+mission:
+  name: "Try Jupiter Mobile"
+
+action:
+  - open_app
+  - complete_onboarding
+  - execute_swap
+  - remain_active
+
+duration:
+  minimum: 45s
+
+assurance:
+  required: P2
+
+evidence:
+  checkpoints: 6
+  continuity: required
+
+witness:
+  required: false
+
+reward:
+  token: SKR
+  amount: 0.1
+
+anti_replay:
+  nonce: single_use
+
+eligibility:
+  sgt_mint_per_day: 1
+```
+
+The client does not decide whether this policy passed.
+
+---
+
+# Server-Authoritative Verification
+
+One of the most important architectural decisions:
+
+> **The client never decides reward entitlement.**
+
+The mobile application is an evidence collector.
+
+The server owns:
+
+- session nonce
+- mission policy
+- identity verification
+- claim state
+- replay prevention
+- evidence validation
+- attestation result
+- reward authorization
 
 ```mermaid
 sequenceDiagram
-    participant Claude as Claude Web
-    participant AS as ARGUS OAuth 2.1 AS
-    participant User as User (browser)
-    participant MCP as ARGUS MCP Server
 
-    Claude->>MCP: GET /api/v1/mcp
-    MCP-->>Claude: 401 WWW-Authenticate: Bearer resource_metadata=...
-    Claude->>AS: GET /.well-known/oauth-protected-resource
-    AS-->>Claude: { resource, authorization_servers }
-    Claude->>AS: GET /.well-known/oauth-authorization-server
-    AS-->>Claude: { authorize, token, register endpoints }
-    Claude->>AS: POST /register
-    AS-->>Claude: { client_id: rmt_client_... }
-    Claude->>AS: GET /authorize?client_id=&code_challenge=
-    AS-->>User: 302 → /connect?request=... (budget picker)
-    User->>AS: POST /api/v1/argus/oauth/approve ($5/$10/$25/$50)
-    Claude->>AS: POST /token (code + PKCE verifier)
-    AS-->>Claude: { access_token: rmt_at_... }
-    Claude->>MCP: POST /api/v1/mcp/bearer (Authorization: Bearer)
-    MCP-->>Claude: Real governed tool-call responses
+    participant U as User
+    participant APP as PRESENCE App
+    participant API as ATTEST Server
+    participant SOL as Solana
+    participant R as Reward System
+
+    U->>APP: Start mission
+
+    APP->>API: Request session
+    API->>API: Generate fresh nonce
+    API-->>APP: Session policy + nonce
+
+    APP->>APP: Collect bounded evidence
+
+    APP->>API: Submit evidence chain
+
+    API->>API: Verify SGT
+    API->>API: Verify SIWS
+    API->>API: Verify nonce
+    API->>API: Verify continuity
+    API->>API: Verify mission policy
+    API->>API: Check replay / claim state
+
+    API->>SOL: Create DailyAttestation
+
+    SOL-->>API: Attestation confirmed
+
+    API->>R: Authorize settlement
+
+    API-->>APP: VERIFIED
+
+    APP-->>U: Trust Receipt
 ```
 
-### Governance Decision Path
+---
+
+# Why Evidence Is Structured as a Chain
+
+PRESENCE does not upload raw sensor streams to the blockchain.
+
+Instead, the session produces bounded evidence.
+
+Conceptually:
+
+```text
+checkpoint_1
+     │
+     ▼
+checkpoint_2
+     │
+     ▼
+checkpoint_3
+     │
+     ▼
+checkpoint_4
+     │
+     ▼
+checkpoint_5
+     │
+     ▼
+checkpoint_6
+     │
+     ▼
+final_evidence_root
+```
+
+The resulting root becomes the compact cryptographic commitment to the session.
+
+This allows the system to keep the blockchain layer small while preserving verifiability.
+
+---
+
+# Privacy by Design
+
+PRESENCE is designed around **evidence minimization**.
+
+The goal is not:
+
+> "Collect everything about the user."
+
+The goal is:
+
+> **"Collect only what is required to satisfy the mission policy."**
+
+Therefore:
+
+- raw touch data is not placed on-chain
+- raw motion streams are not placed on-chain
+- raw behavioral data is not placed on-chain
+- session scope is bounded
+- evidence is hashed
+- only required commitments are anchored
+- users explicitly authorize sessions
+
+Behavioral and motion signals, where used, are treated as **fraud signals**, not proof of biological identity.
+
+---
+
+# On-Chain Architecture
+
+PRESENCE deliberately keeps the on-chain state minimal.
+
+## `PresenceProfile`
+
+Stores the participant's persistent trust identity.
+
+Conceptually:
+
+```rust
+struct PresenceProfile {
+    owner: Pubkey,
+    sgt_mint: Pubkey,
+    level: u8,
+    reputation: u64,
+    stats: ProfileStats,
+}
+```
+
+---
+
+## `DailyAttestation`
+
+Stores the result of a verified mission session.
+
+Conceptually:
+
+```rust
+struct DailyAttestation {
+    profile: Pubkey,
+    date: i64,
+    mission_id: Pubkey,
+    evidence_root: [u8; 32],
+    assurance_level: u8,
+}
+```
+
+---
+
+# Why Only Two Core PDAs?
+
+PRESENCE intentionally avoids putting the entire application state on-chain.
+
+The blockchain should anchor:
+
+```text
+IDENTITY
+ATTESTATION
+REPUTATION
+```
+
+while high-volume operational computation remains off-chain.
+
+This keeps the system:
+
+- cheaper
+- faster
+- easier to iterate
+- privacy-conscious
+- easier to integrate
+
+The chain becomes the **trust anchor**, not the entire backend.
+
+---
+
+# Evidence Session
+
+A session conceptually contains:
+
+```text
+session_nonce
+sgt_mint
+start_time
+
+checkpoint_1_hash
+checkpoint_2_hash
+checkpoint_3_hash
+checkpoint_4_hash
+checkpoint_5_hash
+checkpoint_6_hash
+
+witness_root
+final_evidence_root
+```
+
+The final evidence root is what ultimately matters for the on-chain attestation.
+
+---
+
+# The Core User Workflow
+
+PRESENCE intentionally makes the technology invisible to the participant.
+
+The experience should feel like:
+
+```text
+TODAY'S PROOF
+       │
+       ▼
+   ATTEST NOW
+       │
+       ▼
+  Complete Action
+       │
+       ▼
+   VERIFIED ✓
+       │
+       ▼
+ Reputation ↑
+       │
+       ▼
+ League ↑
+```
+
+Not:
+
+```text
+Configure nonce
+Generate key
+Collect sensor
+Submit hashes
+Wait for RPC
+Inspect PDA
+```
+
+The protocol complexity belongs underneath the experience.
+
+---
+
+# Today's Proof
+
+The consumer product has three primary surfaces.
+
+## 1. TODAY'S PROOF
+
+One meaningful verified action per day.
+
+Example:
+
+```text
+27 DAY STREAK
+
+GOLD #117
+INDIA
+
+4 MINUTES
+P2 PROCESS
+
++180 XP
+
+[ ATTEST NOW ]
+```
+
+The user should perceive:
+
+- time
+- progress
+- status
+- reputation
+- achievement
+
+The cryptography remains mostly invisible.
+
+---
+
+# 2. LEAGUE
+
+PRESENCE uses persistent social status.
+
+Example:
+
+```text
+BRONZE
+   ↓
+SILVER
+   ↓
+GOLD
+   ↓
+ELITE
+```
+
+Weekly promotion and relegation create:
+
+- status
+- belonging
+- competition
+- loss aversion
+- recurring participation
+
+The objective is not to make users chase meaningless points.
+
+The objective is to make **trusted participation itself valuable**.
+
+---
+
+# 3. PASSPORT
+
+The Passport is the user's portable participation identity.
+
+Example:
+
+```text
+alice.skr
+
+VERIFIED SEEKER
+
+138 DAY STREAK
+
+GOLD
+
+2,184
+VERIFIED PROCESSES
+
+P1   1,920
+P2     241
+P3      23
+P4       0
+```
+
+The Passport should expose real verified history rather than invented confidence scores.
+
+It becomes a portable trust record.
+
+---
+
+# Trust Receipt
+
+The Trust Receipt is the climax of the PRESENCE experience.
+
+Example:
+
+```text
+┌─────────────────────────────────┐
+│                                 │
+│          VERIFIED ✓             │
+│                                 │
+│       P2 PROCESS ATTESTED       │
+│                                 │
+│       58 seconds                │
+│       6 checkpoints             │
+│                                 │
+│       +180 XP                   │
+│                                 │
+│       GOLD #117 → #103          │
+│                                 │
+│       View Evidence →           │
+│                                 │
+└─────────────────────────────────┘
+```
+
+A receipt can expose:
+
+- Seeker verification
+- wallet authorization
+- session timestamps
+- evidence checkpoints
+- assurance level
+- witness policy
+- replay status
+- settlement transaction
+
+The reward is not the climax.
+
+### **Verification is the climax.**
+
+---
+
+# Verified Actions Marketplace
+
+PRESENCE extends beyond the consumer application.
+
+The long-term marketplace thesis is:
+
+> **Don't sell attention. Sell verified outcomes.**
+
+Instead of:
+
+```text
+Sponsor
+   ↓
+Advertisement
+   ↓
+Impression
+```
+
+PRESENCE enables:
+
+```text
+Sponsor
+   ↓
+Mission Policy
+   ↓
+Verified Participation
+   ↓
+Attestation
+   ↓
+Outcome
+   ↓
+Payment
+```
+
+---
+
+# Sponsor Workflow
 
 ```mermaid
 flowchart LR
-    A["Tool call received"] --> B{"9 governance plugins evaluate"}
-    B -->|"loop / recursion / token explosion"| C["Severity: CRITICAL"]
-    B -->|"latency spike / agent stuck / tool timeout"| D["Severity: HIGH"]
-    B -->|"retry storm / repeated prompt"| E["Severity: MEDIUM"]
-    C --> F["Action: KILL_RUN"]
-    D --> G["Action: ALERT / TRIGGER_FALLBACK"]
-    E --> H["Action: CIRCUIT_BREAKER / ALERT"]
-    F --> I["OTel span: argus.governance.violation"]
-    G --> I
-    H --> I
-    I --> J["SigNoz Cloud"]
-    F --> K["WebSocket push → Mission Control"]
+
+    S[Sponsor] --> M[Create Mission]
+
+    M --> P[Define Policy]
+
+    P --> A[Choose Assurance]
+
+    A --> F[Fund Outcome]
+
+    F --> U[Participants]
+
+    U --> E[Evidence]
+
+    E --> V[ATTEST]
+
+    V --> O[Verified Outcome]
+
+    O --> R[Reward Participant]
+
+    O --> REP[Update Reputation]
+
+    O --> D[Attribution]
 ```
 
----
-
-## 🔬 Technical Deep-Dive: Flagship Features
-
-### 1. Cost Firewall — Per-Session Budget Enforcement
-
-Each MCP session is bound to a budget accumulator ($5 / $10 / $25 / $50 tiers, or a custom `ARGUS_BUDGET_LIMIT`). Every tool call is priced (e.g. `read_file` = $0.001, `run_command` = $0.003) and atomically added to the session's running total on `POST /api/v1/mcp/bearer`. When cumulative burn crosses the threshold, the **Budget Exceeded** plugin fires `KILL_RUN`, the bearer token is revoked mid-connection, and an `argus.budget.exceeded` span is emitted with `argus.total_burn_usd` and `argus.budget_limit_usd` attributes — closing the loop before a runaway agent generates a billing surprise.
-
-### 2. Agent DNA — Z-Score Behavioral Fingerprinting
-
-For every tracked agent, ARGUS computes a rolling baseline of average cost per run, average and p95 latency, and tool-usage distribution. New sessions are scored against that baseline using **Z-score deviation** to produce a 0–100 anomaly score. A `search_code` call frequency that spikes 100× above baseline — a classic prompt-injection or infinite-loop signature — trips the "Drift Detected" flag without any manual thresholding, useful for both real-time defense and after-the-fact compliance evidence.
-
-### 3. Governance Rule Engine — 9 Concurrent Detection Plugins
-
-Every tool call is streamed through a plugin pipeline (infinite tool loop, token explosion, budget exceeded, latency spike, agent stuck, retry storm, repeated prompt, prompt recursion, tool timeout) evaluated **in-line, synchronously**, before the tool result returns to the agent. Each plugin owns a severity (CRITICAL/HIGH/MEDIUM) and a bound recovery action (`KILL_RUN`, `ALERT`, `CIRCUIT_BREAKER`, `TRIGGER_FALLBACK`) — a fail-closed design where governance evaluation is on the hot path, not a side-channel audit log.
-
-### 4. Prompt Replay — Trace Reconstruction & Real LLM Re-Execution
-
-Given a trace ID captured from Mission Control, ARGUS reconstructs the original tool-call context and re-executes it against a live OpenAI model (`gpt-4o-mini` by default) with an optionally modified prompt, returning a side-by-side diff of latency delta, cost delta, and response content — turning a governance dashboard into a debugging and prompt-engineering workbench.
-
-### 5. OAuth 2.1 Authorization Server — Self-Hosted, PKCE-Enforced
-
-Rather than delegating identity to a third party, ARGUS runs its own in-process **OAuth 2.1 Authorization Server** exposing `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` discovery, dynamic client registration (`/register`), and an `S256` PKCE-only `/authorize` → `/token` exchange — the exact discovery contract Claude Web expects from a remote MCP connector, with a human-in-the-loop budget-approval step inserted before token issuance.
-
----
-
-## 🧰 Tech Stack
-
-| Layer | Technology | Architectural Purpose |
-|---|---|---|
-| **Core Runtime** | Go 1.24+, `gorilla/mux` | HTTP routing for MCP + REST + OAuth endpoints, high concurrency, low GC overhead |
-| **Real-Time Transport** | Gorilla WebSocket | Sub-second state sync between backend agent state and Mission Control UI |
-| **Governance Engine** | Custom Go plugin pipeline | Synchronous, in-line rule evaluation on the tool-call hot path |
-| **Cost Firewall** | In-memory accumulator (DB-ready) | Atomic per-session budget tracking with thread-safe increment |
-| **Auth Layer** | OAuth 2.1 Authorization Server, PKCE S256 | Zero-trust, code-flow-only auth for remote MCP clients (no implicit grant) |
-| **Frontend** | Next.js 15/16, React 19, Tailwind CSS | Server-rendered dashboard with streaming WebSocket state |
-| **Observability** | OpenTelemetry SDK, OTLP/HTTP exporter | Vendor-neutral span export decoupled from the storage backend |
-| **Telemetry Backend** | SigNoz Cloud | Managed trace/metrics store, `service.name = argus-control-plane` |
-| **LLM Integration** | OpenAI `gpt-4o-mini` (Prompt Replay) | Real re-execution for trace diffing, gated behind `ARGUS_LLM_API_KEY` |
-| **Protocol** | Model Context Protocol `2024-11-05` | Standardized tool-call contract between agent and control plane |
-| **Python SDK** | `argus-sdk` (pip-installable) | `@argus.enforce` decorator for non-MCP agent instrumentation |
-| **Data Context** | DataHub MCP Server (MCP client) | Metadata-aware governance: ownership, lineage-PII, GDPR/HIPAA policy, quality, deprecation + audit write-back |
-| **Testing** | Go `testing`, Python `pytest`, Playwright | Unit, integration, and E2E coverage across backend and dashboard |
-| **Deployment** | Docker, `docker-compose.prod.yaml`, Railway, Render, Netlify | Multi-target deploy for backend container + static/edge frontend |
-
----
-
-## 📂 Directory Structure
+Sponsors can eventually measure:
 
 ```text
-Argus/
-├── cmd/
-│   ├── argus-server/        # Main backend entrypoint (main.go, Dockerfile)
-│   └── argus-cli/           # CLI client for scripted governance ops
-├── pkg/
-│   └── query-service/
-│       └── argus/           # Governance engine, cost firewall, telemetry, OAuth AS
-│           ├── engine/      # 9 detection plugins + ContextAwareDetector
-│           ├── datahub/     # DataHub MCP client + 5 metadata-aware plugins + write-back
-│           └── telemetry/   # OTel tracer bootstrap → SigNoz Cloud
-├── frontend/                 # Next.js 15/16 dashboard (Cost Firewall, Mission Control, DNA, DataHub…)
-├── argus-sdk/                 # pip-installable Python SDK (@argus.enforce)
-├── agent-skills/              # MCP agent skill definitions
-├── examples/datahub/          # DataHub setup guide + seed_metadata.py (demo tags)
-├── deploy/                    # Deployment manifests (Railway / Render / Docker)
-├── demo/                       # verify.py — 20-check real end-to-end verification
-├── docs/                        # Architecture & protocol documentation
-├── tests/                        # Unit, integration (pytest) & E2E (Playwright) suites
-├── integrations/                  # Third-party connector glue
-├── SELF_HOSTING.md                # Self-host guide: Docker Compose, DataHub wiring, production
-├── .env.example                    # Required environment variables (see below)
-├── docker-compose.prod.yaml         # Production container topology
-├── Dockerfile                        # Backend multi-stage build (Go 1.24-alpine)
-├── SECURITY.md                        # Vulnerability disclosure policy
-├── LICENSE                             # Upstream SigNoz license
-└── LICENSE-APACHE                      # Apache 2.0 (hackathon open-source requirement)
+Required actions
+Completed actions
+P1 actions
+P2 actions
+P3 actions
+
+Rejected
+Duplicate
+Average completion time
+
+Cost / verified action
 ```
+
+The business metric becomes:
+
+### **Cost per verified action**
+
+rather than cost per impression.
 
 ---
 
-## 🚀 Quick Start
+# Initial Beachhead
 
-### Prerequisites
+PRESENCE should not begin by trying to sell to global brands.
 
-| Requirement | Version | Purpose |
-|---|---|---|
-| Go | `>= 1.24.x` | Backend build/runtime |
-| Node.js | `>= 20.x` | Dashboard build/runtime |
-| SigNoz Cloud account | Free tier works | Trace ingestion (`signoz.io`) |
-| OpenAI API key | — | Enables real Prompt Replay |
+The first ecosystem is:
 
-### 1 — Clone & configure environment
+### **Seeker-native applications.**
 
-```bash
-git clone https://github.com/Aaditya1273/Argus.git
-cd Argus
-cp .env.example .env.local
-```
+Potential participants include:
 
-**`.env.example`** (fill in your own values in `.env.local`):
+- Solana applications
+- wallets
+- games
+- protocols
+- communities
+- events
 
-```bash
-# --- SigNoz Cloud (Settings → Ingestion Settings) ---
-OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.in2.signoz.cloud"
-OTEL_EXPORTER_OTLP_HEADERS="signoz-ingestion-key=YOUR_KEY"
+Example:
 
-# --- OpenAI (enables real Prompt Replay) ---
-ARGUS_LLM_API_KEY="sk-..."
-# OPENAI_API_KEY="sk-..."          # alternate var name, also honored
+> "We need 1,000 verified activations for our mobile application."
 
-# --- Core service identity ---
-# ARGUS_ADDR=":8080"
-# ARGUS_ORG_ID="default"
-# ARGUS_PUBLIC_BASE="http://localhost:8080"   # set to your deployed URL in prod
-# ARGUS_DASHBOARD_BASE="http://localhost:3000"
-
-# --- Cost Firewall ---
-# ARGUS_BUDGET_LIMIT="100"          # global per-session budget ceiling ($)
-
-# --- Optional integrations ---
-# ARGUS_CLICKHOUSE_DSN=""           # persistent storage backend (optional)
-# ARGUS_WEBHOOK_URL=""              # generic incident webhook
-# SLACK_WEBHOOK_URL=""              # Slack incident notifications
-
-# --- DataHub metadata-aware governance (optional) ---
-# DATAHUB_MCP_URL="https://<tenant>.acryl.io/integrations/ai/mcp"
-# DATAHUB_TOKEN="<datahub personal access token>"
-# DATAHUB_MUTATION_ENABLED="true"   # enables audit write-back (add_tags)
-```
-
-### 2 — Start the backend
-
-```bash
-go run cmd/argus-server/main.go
-```
-
-Expected output:
+Instead of building another custom anti-fraud system, the application can eventually define:
 
 ```text
-INFO ARGUS: SigNoz Cloud credentials loaded  endpoint=https://ingest.in2.signoz.cloud
-INFO ARGUS: OAuth 2.1 discovery base         public_base=http://localhost:8080
-INFO argus: MCP server initialized           endpoint=/api/v1/mcp
-INFO ARGUS server starting                   addr=:8080
+required_assurance = P2
 ```
 
-### 3 — Start the dashboard
+and integrate PRESENCE.
 
-```bash
-cd frontend && npm install && npm run dev
+---
+
+# Developer Integration
+
+The long-term interface is intentionally simple.
+
+Conceptually:
+
+```typescript
+const result = await presence.verifyAction({
+  user,
+  assurance: "P2",
+  mission: "jupiter-mobile-onboarding"
+});
+
+if (result.verified) {
+  unlockReward();
+}
 ```
 
-Open **http://localhost:3000**
+Or:
 
-> **Self-hosting?** Everything is env-configurable — the dashboard no longer
-> hardcodes a backend URL. Set `ARGUS_BACKEND_URL` /
-> `NEXT_PUBLIC_ARGUS_BACKEND_URL` to your own backend (see
-> [`SELF_HOSTING.md`](./SELF_HOSTING.md) for Docker Compose, DataHub wiring and
-> production tips).
+```typescript
+verifyPresence(user, {
+  seeker: true,
+  assurance: "P2",
+  reputation: 500,
+  lastAttestationWithin: "7d"
+});
+```
 
-### 4 — Or run everything via Docker Compose
+Result:
 
-```bash
-docker compose -f docker-compose.prod.yaml up --build
+```json
+{
+  "verified": true,
+  "assurance": "P2",
+  "proof": "attestation-reference",
+  "reputation": 812
+}
+```
+
+This API is where PRESENCE can evolve from an application into infrastructure.
+
+---
+
+# Integration Model
+
+```mermaid
+flowchart TD
+
+    D1[Solana dApp]
+    D2[Game]
+    D3[Wallet]
+    D4[Merchant]
+    D5[DAO]
+    D6[Event]
+
+    D1 --> API[PRESENCE verifyPresence()]
+    D2 --> API
+    D3 --> API
+    D4 --> API
+    D5 --> API
+    D6 --> API
+
+    API --> ATTEST[ATTEST Engine]
+
+    ATTEST --> PROFILE[Presence Profile]
+    ATTEST --> ATT[Attestation]
+    ATTEST --> REP[Reputation]
+
+    ATTEST --> RESULT[PASS / FAIL + Proof]
+
+    RESULT --> D1
+    RESULT --> D2
+    RESULT --> D3
+    RESULT --> D4
+    RESULT --> D5
+    RESULT --> D6
 ```
 
 ---
 
-## 🔌 Connect Claude in Under 2 Minutes
+# Why Seeker?
 
-Go to **`http://localhost:3000/plugins`** → click **"Add to Claude Web."** Claude redirects to the ARGUS consent screen, you pick a budget ($5 / $10 / $25 / $50), approve — ARGUS is now governing every tool call Claude makes.
+PRESENCE is designed around capabilities that make Seeker particularly valuable as the first platform.
 
-| Client | Method | How |
-|---|---|---|
-| **Claude Web** | OAuth 2.1 + PKCE | Click **"Add to Claude Web"** on the Plugins page |
-| **Claude Desktop** | SSE | Add the config file shown on the Plugins page |
-| **Claude Code** | HTTP | `claude mcp add --transport http argus http://localhost:8080/api/v1/mcp` |
-| **Cursor** | SSE | Click the **"Cursor"** chip on the Plugins page |
-| **VS Code** | SSE | Click the **"VS Code"** chip on the Plugins page |
+### Seeker provides the identity foundation.
 
-### MCP Tools Exposed to Claude
+PRESENCE builds the participation layer above it.
 
-| Tool | Cost | Function |
-|---|---|---|
-| `read_file` | $0.001 | Read any file in the project |
-| `search_code` | $0.002 | Ripgrep search across the codebase |
-| `list_directory` | $0.001 | List directory contents |
-| `analyze_codebase` | $0.005 | Language breakdown + file metrics |
-| `run_command` | $0.003 | Execute shell commands (`bash -c`) |
-| `argus_list_agents` | $0.001 | List all agents tracked by ARGUS |
-| `argus_cost_status` | $0.001 | Get current budget/burn status |
-| `argus_agent_dna` | $0.002 | Get behavioral fingerprint for a trace |
-| `signoz_query_traces` | $0.002 | Query SigNoz trace data |
-| `signoz_get_services` | $0.001 | List SigNoz-monitored services |
-| `signoz_list_alerts` | $0.001 | List SigNoz alert rules |
-| `signoz_create_dashboard` | $0.005 | Create a SigNoz dashboard |
-| `datahub_search` | $0.002 | Search the DataHub catalog (`/q` syntax, filters, pagination) |
-| `datahub_get_asset` | $0.002 | Fetch metadata for a DataHub entity (tags, owners, deprecation, quality) |
-| `datahub_get_lineage` | $0.003 | Fetch upstream/downstream lineage (hop control) |
-| `datahub_list_schema_fields` | $0.002 | List dataset columns with keyword filter + pagination |
-| `datahub_access_dataset` | $0.005 | **Governed access** — evaluated against 5 metadata plugins before returning data |
-| `datahub_get_dataset_queries` | $0.003 | Real SQL referencing a dataset/column |
-| `datahub_lineage_paths_between` | $0.003 | Exact transformation chains between two assets |
-| `datahub_get_dataset_assertions` | $0.003 | Data-quality assertion run results |
-| `datahub_get_me` | $0.001 | Authenticated DataHub user |
-| `datahub_remove_tag` | $0.002 | Remove a tag (write-back) |
-| `datahub_set_domain` | $0.002 | Assign a business domain (write-back) |
-| `datahub_update_description` | $0.002 | Append audit notes to descriptions (write-back) |
+The stack becomes:
 
-### Python SDK (non-MCP agent instrumentation)
-
-```bash
-cd argus-sdk && pip install -e .
+```text
+SEEKER
+│
+├── SGT
+│
+├── Seed Vault
+│
+├── Seeker ID
+│
+├── Solana
+│
+├── Mobile Stack
+│
+└── dApp ecosystem
+        │
+        ▼
+    PRESENCE
+        │
+        ├── Process Evidence
+        ├── Attestation
+        ├── Reputation
+        ├── Rewards
+        └── Access
 ```
 
-```python
-import argus
+PRESENCE is therefore not trying to recreate Seeker's identity infrastructure.
 
-argus.init(
-    agent_id="my-sales-agent",
-    telemetry_endpoint="http://localhost:4318",
-    control_plane_url="ws://localhost:8080/api/v1/argus/agent-ws",
-)
+It consumes it.
 
-@argus.enforce
-def my_agent_loop():
-    # ARGUS intercepts every call, checks for kill/pause signals
-    ...
+---
+
+# Relationship With Activity Tracking
+
+PRESENCE complements activity tracking rather than replacing it.
+
+Activity tracking answers:
+
+> **"What did I do?"**
+
+PRESENCE answers:
+
+> **"What should I do today, and can this action be verified under a defined assurance policy?"**
+
+This distinction is fundamental.
+
+```text
+ACTIVITY TRACKING
+        │
+        ▼
+   HISTORY
+
+PRESENCE
+        │
+        ├── INTENTION
+        ├── PROCESS
+        ├── ASSURANCE
+        └── VERIFIED OUTCOME
 ```
 
 ---
 
-## 🔗 DataHub Metadata-Aware Governance
+# Security Model
 
-ARGUS integrates with the **DataHub Context Platform** as an MCP *client* — so
-AI agents get governed access to the data stack with complete context, and
-every access decision is written back to the graph.
+PRESENCE does not claim perfect fraud prevention.
 
-### How it works
+Instead, it creates progressively stronger economic and technical barriers.
+
+## Threats
+
+### Sensor forgery
+
+A malicious client may attempt to fabricate signals.
+
+### Replay
+
+A previously valid session may be reused.
+
+### Device farming
+
+An attacker may operate multiple eligible devices.
+
+### Client tampering
+
+The application may be modified.
+
+### Session theft
+
+An attacker may attempt to reuse session credentials.
+
+### Witness collusion
+
+Multiple participants may coordinate to satisfy a witness policy dishonestly.
+
+### Privacy correlation
+
+Persistent activity may create unwanted identity correlation.
+
+### Double settlement
+
+A valid mission may be claimed more than once.
+
+---
+
+# Mitigations
+
+| Threat | Mitigation |
+|---|---|
+| Replay | Fresh single-use session nonce |
+| Double claim | Server-side claim registry |
+| Device farming | SGT-based eligibility |
+| Client manipulation | Server-authoritative verification |
+| Session theft | Ephemeral evidence key |
+| Fake continuity | Evidence chain + policy verification |
+| Witness abuse | Fresh challenge + quorum policy |
+| Data exposure | Minimal evidence + hashes |
+| Reward manipulation | Client never determines entitlement |
+
+No mitigation is represented as absolute.
+
+The system is designed around **assurance**, not impossible security claims.
+
+---
+
+# Threat Model
+
+```mermaid
+flowchart TD
+
+    ATTACKER[Adversary]
+
+    ATTACKER --> BOT[Automation]
+    ATTACKER --> REPLAY[Replay]
+    ATTACKER --> FARM[Device Farming]
+    ATTACKER --> FORGE[Evidence Forgery]
+    ATTACKER --> COLLUSION[Witness Collusion]
+    ATTACKER --> CLIENT[Client Tampering]
+
+    BOT --> P2[P2 Process Verification]
+    REPLAY --> NONCE[Fresh Nonce]
+    FARM --> SGT[SGT Eligibility]
+    FORGE --> HASH[Evidence Hash Chain]
+    COLLUSION --> POLICY[Witness Policy]
+    CLIENT --> SERVER[Server Authority]
+
+    P2 --> TRUST[ATTEST]
+    NONCE --> TRUST
+    SGT --> TRUST
+    HASH --> TRUST
+    POLICY --> TRUST
+    SERVER --> TRUST
+
+    TRUST --> RESULT[Assurance Result]
+```
+
+---
+
+# Data Flow
 
 ```mermaid
 flowchart LR
-    A["Agent (Claude / Cursor / any MCP client)"] -->|datahub_access_dataset| ARGUS
-    ARGUS["ARGUS Governance Engine"] -->|"ownership · lineage-PII · policy · quality · deprecation"| DH["DataHub MCP Server"]
-    DH -->|context graph| ARGUS
-    ARGUS -->|"ALLOW / WARN / BLOCK"| A
-    ARGUS -->|"audit event → add_tags"| DH
-    ARGUS -->|"span: argus.governance.violation"| SIGNOZ["SigNoz Cloud"]
+
+    DEVICE[Seeker Device]
+        --> SESSION[Bounded Session]
+
+    SESSION
+        --> SIGNALS[Interaction / Motion / Event Signals]
+
+    SIGNALS
+        --> HASHES[Checkpoint Hashes]
+
+    HASHES
+        --> ROOT[Evidence Root]
+
+    ROOT
+        --> VERIFY[ATTEST Verification]
+
+    VERIFY
+        --> ATTEST[On-chain Attestation]
+
+    ATTEST
+        --> REP[Reputation]
+
+    ATTEST
+        --> REWARD[Reward]
+
+    ATTEST
+        --> ACCESS[Access]
 ```
 
-Every MCP tool call is evaluated against **5 metadata-aware plugins** before
-execution (fail-closed):
+Raw evidence does not need to become permanent blockchain state.
 
-| Plugin | Checks | Blocking example |
-|---|---|---|
-| DataHub Ownership | Entity has an accountable owner | Ownerless dataset accessed by an agent |
-| Lineage-Aware PII Detection | `PII` / `Sensitive` / `PHI` tags on the entity **or any lineage neighbor** | Agent reads a downstream copy of a PII table |
-| DataHub Policy Enforcement | GDPR / HIPAA compliance tags | Agent reads GDPR-tagged data without policy clearance |
-| DataHub Data Quality | Health/quality score below threshold | Agent trains on a degraded dataset |
-| DataHub Deprecation Check | Entity is deprecated | Agent queries a retired table |
+The blockchain anchors the **result and commitment**.
 
-Blocking violations fail the tool call *before the agent sees any data*;
-warnings pass through but are logged. Every decision is written back to
-DataHub as an audit tag (`ARGUS_BLOCK` / `ARGUS_WARN` / `ARGUS_ALLOW`) and shown
-live on the **DataHub Context** dashboard page.
+---
 
-### Configuration
+# End-to-End Protocol Flow
 
-```bash
-# ARGUS side
-export DATAHUB_MCP_URL="https://<tenant>.acryl.io/integrations/ai/mcp"   # self-hosted: http://<gms-host>:8080/mcp
-export DATAHUB_TOKEN="<datahub pat>"
-export DATAHUB_MUTATION_ENABLED="true"   # enables audit write-back
+```mermaid
+sequenceDiagram
 
-# DataHub MCP server side (set on the DataHub process, not ARGUS)
-TOOLS_IS_MUTATION_ENABLED=true     # add_tags/remove_tags/add_owners/set_domains/update_description
-TOOLS_IS_USER_ENABLED=true         # get_me
-DATA_QUALITY_TOOLS_ENABLED=true    # get_dataset_assertions
+    autonumber
+
+    participant User
+    participant Seeker
+    participant Presence
+    participant Attest
+    participant Solana
+
+    User->>Presence: Select Today's Proof
+
+    Presence->>Attest: Request mission session
+
+    Attest->>Attest: Create nonce
+
+    Attest-->>Presence: Mission policy + nonce
+
+    Presence->>Seeker: Request authorization
+
+    Seeker-->>Presence: SIWS authorization
+
+    Presence->>Presence: Begin bounded process
+
+    loop Evidence checkpoints
+        Presence->>Presence: Collect process signal
+        Presence->>Presence: Hash checkpoint
+    end
+
+    Presence->>Attest: Submit evidence root
+
+    Attest->>Attest: Verify SGT
+    Attest->>Attest: Verify signature
+    Attest->>Attest: Verify nonce
+    Attest->>Attest: Verify continuity
+    Attest->>Attest: Evaluate policy
+
+    Attest->>Solana: Write DailyAttestation
+
+    Solana-->>Attest: Confirmed
+
+    Attest-->>Presence: VERIFIED
+
+    Presence-->>User: Trust Receipt
 ```
 
-Without these variables the integration is a no-op — the rest of the ARGUS
-ecosystem (OAuth, cost firewall, telemetry) behaves exactly as before.
-
-**Self-hosted?** The full stack (backend + dashboard + DataHub) is
-env-configurable and ships with Docker Compose — see
-[`SELF_HOSTING.md`](./SELF_HOSTING.md).
-
-Verify with `curl -s http://localhost:8080/api/v1/argus/datahub/status`.
-See [`examples/datahub/README.md`](examples/datahub/README.md) for the full
-setup guide, and run `examples/datahub/seed_metadata.py` to seed demo
-PII/deprecated tags for an end-to-end walkthrough.
-
-### The demo moment (write-back)
-
-1. An agent calls `datahub_access_dataset` on a dataset whose upstream lineage
-   contains a `PII`-tagged table.
-2. ARGUS walks the lineage, the **Lineage-Aware PII** plugin fires `KILL_RUN`,
-   and the tool call fails *before the agent sees any data*.
-3. ARGUS writes an `ARGUS_BLOCK` audit tag back to DataHub via `add_tags` and
-   streams the decision to the dashboard's Governance Event Log.
-
-This "contributes back to the graph" behavior is exactly what the DataHub
-Agent Hackathon rubric rewards: most submissions read metadata; ARGUS also
-writes governance decisions to it.
-
 ---
 
-## 🧪 Testing & Verification
+# Repository Architecture
 
-```bash
-# Go unit + package tests
-go test ./...
+A production implementation can be organized around clear trust boundaries.
 
-# Full 20-check real end-to-end verification (OAuth flow, live MCP calls,
-# governance rules, SigNoz connectivity, agent tracking — no mocks)
-go run cmd/argus-server/main.go &
-python3 demo/verify.py
-
-# Python integration suite (pytest, fixtures in tests/fixtures)
-cd tests && uv run pytest integration/
-
-# Dashboard end-to-end (Playwright)
-cd tests/e2e && npm install && npx playwright test
+```text
+presence/
+│
+├── apps/
+│   │
+│   ├── android/
+│   │   ├── ui/
+│   │   ├── seeker/
+│   │   ├── wallet/
+│   │   ├── evidence/
+│   │   └── session/
+│   │
+│   └── web/
+│       ├── passport/
+│       ├── league/
+│       └── sponsor/
+│
+├── programs/
+│   └── presence/
+│       ├── programs/
+│       ├── accounts/
+│       ├── instructions/
+│       └── errors/
+│
+├── services/
+│   │
+│   └── attest/
+│       ├── sessions/
+│       ├── verification/
+│       ├── policy/
+│       ├── replay/
+│       ├── reputation/
+│       └── settlement/
+│
+├── sdk/
+│   └── verify-presence/
+│
+├── docs/
+│   ├── architecture/
+│   ├── security/
+│   ├── protocol/
+│   └── integrations/
+│
+└── README.md
 ```
 
-**Coverage types implemented:**
+---
 
-- ✅ **Unit tests** — Go governance plugin logic, cost accumulator math
-- ✅ **Integration tests** — Python `pytest` fixtures against a live backend (Postgres/ClickHouse fixtures included)
-- ✅ **End-to-end tests** — Playwright against the running Next.js dashboard
-- ✅ **Real-system verification** — `demo/verify.py`, 20 checks against a live server, zero mocked responses
+# Core Components
+
+## Android Client
+
+Responsibilities:
+
+- Seeker interaction
+- wallet authorization
+- mission UI
+- bounded evidence collection
+- checkpoint generation
+- evidence submission
+- Trust Receipt presentation
+
+The client is **not trusted to decide outcomes**.
 
 ---
 
-## 🛡️ Security Controls & Roadmap
+## ATTEST Engine
 
-### Governance Plugins (9 active by default)
+Responsibilities:
 
-| Plugin | Detects | Severity | Action |
-|---|---|---|---|
-| Infinite Tool Loop | Same tool called >5× in a row | CRITICAL | `KILL_RUN` |
-| Token Explosion | Single call uses >10k tokens | CRITICAL | `KILL_RUN` |
-| Budget Exceeded | Session cost > limit | CRITICAL | `KILL_RUN` |
-| Prompt Recursion | Prompt contains its own output | HIGH | `KILL_RUN` |
-| Latency Spike | Response time >5× baseline | HIGH | `TRIGGER_FALLBACK` |
-| Agent Stuck | No progress for >2 minutes | HIGH | `ALERT` |
-| Tool Timeout | Tool call exceeds 30s | HIGH | `ALERT` |
-| Retry Storm | Same operation retried >10× | MEDIUM | `CIRCUIT_BREAKER` |
-| Repeated Prompt | Same prompt sent >3× | MEDIUM | `ALERT` |
+- session creation
+- nonce generation
+- identity validation
+- evidence verification
+- policy evaluation
+- replay protection
+- claim state
+- assurance classification
 
-### Security Mitigations
-
-- **PKCE-only OAuth 2.1** (`S256`) — no implicit grant, no plaintext code interception
-- **Human-in-the-loop budget approval** before every session's bearer token is issued
-- **Per-session cost isolation** — one agent's burn cannot exhaust another session's budget
-- **Fail-closed governance** — rule evaluation runs synchronously in the tool-call path, not as an async audit log
-- **Kill/pause/resume authority** decoupled from the agent's own UI — a compromised or looping agent cannot block its own shutdown
-- See [`SECURITY.md`](./SECURITY.md) for the full vulnerability-disclosure policy and scope
-
-> ⚠️ **Operational note:** `run_command` executes arbitrary shell commands. In multi-tenant or internet-facing deployments, pair it with an explicit command allowlist, a restricted working directory, and OS-level resource limits — this is on the roadmap below.
-
-### Roadmap
-
-- [x] OAuth 2.1 + PKCE authorization server
-- [x] 9-plugin governance engine with live kill/pause/resume
-- [x] Cost Firewall with per-session budgeting
-- [x] Agent DNA behavioral fingerprinting (Z-score anomaly)
-- [x] OTel → SigNoz Cloud trace export
-- [x] Prompt Replay against real OpenAI models
-- [x] Python SDK (`@argus.enforce`) for non-MCP agents
-- [x] DataHub metadata-aware governance (ownership, lineage-PII, policy, quality, deprecation)
-- [ ] Command allowlist / sandbox for `run_command`
-- [ ] Persistent policy storage (ClickHouse/Postgres-backed, beyond in-memory)
-- [ ] Multi-tenant org/RBAC support for the OAuth AS
-- [ ] Token-level (not just call-level) real LLM cost accounting
-- [ ] Claude-native Prompt Replay (in addition to OpenAI)
+ATTEST is the trust engine underneath PRESENCE.
 
 ---
 
-## 📜 License
+## Solana Program
 
-Dual-licensed:
+Responsibilities:
 
-- [`LICENSE`](./LICENSE) — upstream SigNoz license (base platform)
-- [`LICENSE-APACHE`](./LICENSE-APACHE) — **Apache 2.0** for the ARGUS layer and
-  this repository's original code (hackathon open-source requirement)
+- persistent participant profile
+- attestation anchoring
+- assurance level
+- reputation state
+- verifiable references
+
+The chain provides an independently inspectable trust anchor.
 
 ---
 
-<div align="center">
+## Reputation Layer
 
-**[🚀 Live Dashboard](https://argus-signoz.netlify.app/) · [🎥 Video Walkthrough](https://drive.google.com/file/d/1GVkP8SiEnUFbBV9UFtuOE0PdfDZZbAdr/view) · [📦 GitHub](https://github.com/Aaditya1273/Argus) · [🛡️ Report a Vulnerability](./SECURITY.md)**
+Reputation is built from verified history.
 
-Built on **Go**, **Next.js**, **OpenTelemetry**, **Model Context Protocol**, and **OAuth 2.1** — governing AI agent runtimes in production.
+Conceptually:
 
-</div>
+```text
+VERIFIED ACTION
+      │
+      ▼
+ASSURANCE
+      │
+      ▼
+HISTORY
+      │
+      ▼
+REPUTATION
+      │
+      ├──► ACCESS
+      ├──► STATUS
+      ├──► BETTER MISSIONS
+      └──► TRUST
+```
+
+Rewards are temporary.
+
+Reputation compounds.
+
+That is the long-term user value.
+
+---
+
+# Reward Philosophy
+
+PRESENCE is not designed around:
+
+> "Do meaningless tasks → receive tokens."
+
+Instead:
+
+```text
+MEANINGFUL ACTION
+        ↓
+VERIFIED PARTICIPATION
+        ↓
+REPUTATION
+        ↓
+ACCESS / STATUS / REWARD
+```
+
+Rewards are one output of participation.
+
+They are not the entire product.
+
+---
+
+# Why Users Return
+
+The retention loop is:
+
+```mermaid
+flowchart LR
+
+    ACTION[Meaningful Action]
+        --> VERIFY[Verification]
+
+    VERIFY
+        --> REP[Reputation]
+
+    REP
+        --> STATUS[League Status]
+
+    STATUS
+        --> ACCESS[Better Access]
+
+    ACCESS
+        --> IDENTITY[Portable Identity]
+
+    IDENTITY
+        --> ACTION
+```
+
+Users return because their previous participation continues to matter.
+
+Not simply because yesterday's reward was large.
+
+---
+
+# Network Effects
+
+PRESENCE becomes more useful as more applications recognize its attestations.
+
+```text
+More Users
+    ↓
+More Verified Participation
+    ↓
+Better Reputation Graph
+    ↓
+More Valuable Integrations
+    ↓
+More Sponsors
+    ↓
+More Missions
+    ↓
+More Reasons to Participate
+    ↓
+More Users
+```
+
+The long-term moat is therefore not the mobile UI.
+
+It is the **portable trust graph generated by verified actions**.
+
+---
+
+# Business Model
+
+The initial business model is based on verified outcomes.
+
+Sponsors define:
+
+```text
+Desired Action
+      +
+Required Assurance
+      +
+Reward
+      +
+Budget
+```
+
+PRESENCE provides:
+
+```text
+Verified Participants
++
+Verification Infrastructure
++
+Attribution
++
+Reputation
+```
+
+The intended economic unit becomes:
+
+### **Cost per verified action**
+
+rather than:
+
+### Cost per impression.
+
+A future platform fee can be applied to verified outcome volume.
+
+Any fee percentage should be treated as a business hypothesis until validated with real customers.
+
+---
+
+# Ecosystem Expansion
+
+## Phase 1 — Seeker Ecosystem
+
+Focus:
+
+- Solana mobile apps
+- wallets
+- games
+- protocols
+- Seeker-native communities
+
+Goal:
+
+> Establish PRESENCE as a trusted participation primitive.
+
+---
+
+## Phase 2 — Open Ecosystem
+
+Expand into:
+
+- protocols
+- creators
+- communities
+- events
+- DAOs
+
+---
+
+## Phase 3 — Real-World Commerce
+
+Potential applications:
+
+- merchant participation
+- loyalty
+- physical events
+- product experiences
+- verified purchases
+- local campaigns
+
+The same policy abstraction remains:
+
+```text
+ACTION
+→ EVIDENCE
+→ ASSURANCE
+→ ATTESTATION
+→ VALUE
+```
+
+---
+
+# Optional Ecosystem Integrations
+
+## SKR
+
+PRESENCE can introduce a future **Curator Network**.
+
+Curators can stake behind attestation policies.
+
+Example:
+
+```text
+24,120 SKR
+      │
+      ▼
+P3 POLICY
+      │
+      ▼
+VERIFIED CO-PRESENCE
+```
+
+The purpose is to create economic alignment around trusted policy infrastructure.
+
+This is intentionally different from the role of Solana Mobile Guardians.
+
+---
+
+# ORE
+
+ORE is an optional extension rather than the core PRESENCE narrative.
+
+Potential future missions can use ORE primitives such as:
+
+```text
+Deploy
+Automate
+Checkpoint
+ClaimORE
+```
+
+The core product remains independent of ORE.
+
+---
+
+# TEEPIN
+
+PRESENCE is architecturally aligned with the idea of hardware-backed trust and trusted physical infrastructure.
+
+However:
+
+> **TEEPIN integration should only be claimed when the relevant primitive is actually implemented.**
+
+The architecture is designed to become OEM-ready rather than Seeker-exclusive.
+
+---
+
+# Why This Is Different
+
+Most systems optimize for one of these:
+
+```text
+IDENTITY
+REWARDS
+QUESTS
+ANALYTICS
+ADVERTISING
+ANTI-FRAUD
+```
+
+PRESENCE connects them around a single primitive:
+
+### **Verified participation.**
+
+The key abstraction is:
+
+```text
+                    PRESENCE
+
+       ┌────────────────────────────┐
+       │       Mission Policy       │
+       └──────────────┬─────────────┘
+                      ↓
+       ┌────────────────────────────┐
+       │       Process Evidence     │
+       └──────────────┬─────────────┘
+                      ↓
+       ┌────────────────────────────┐
+       │        ATTEST Engine       │
+       └──────────────┬─────────────┘
+                      ↓
+       ┌────────────────────────────┐
+       │      Verified Action       │
+       └───────┬────────┬───────────┘
+               ↓        ↓
+          Reputation   Reward
+               ↓
+             Access
+```
+
+This turns PRESENCE from a "daily reward app" into a potential **trust infrastructure layer**.
+
+---
+
+# Design Principles
+
+## 1. Evidence over claims
+
+Do not claim more than the evidence supports.
+
+---
+
+## 2. Assurance over absolutes
+
+Never promise:
+
+- 100% anti-bot
+- perfect Sybil resistance
+- biological personhood
+
+Instead provide measurable assurance levels.
+
+---
+
+## 3. Server decides
+
+The client collects evidence.
+
+The verification layer decides.
+
+---
+
+## 4. Minimal on-chain state
+
+Put commitments and durable trust state on-chain.
+
+Keep high-volume computation off-chain.
+
+---
+
+## 5. Privacy by minimization
+
+Collect what is required.
+
+Store what is necessary.
+
+Expose what the user understands.
+
+---
+
+## 6. Reputation compounds
+
+A reward can disappear.
+
+Verified history can continue creating value.
+
+---
+
+## 7. Higher value requires higher assurance
+
+Not every action deserves the same security cost.
+
+---
+
+## 8. Technology should disappear into the UX
+
+The user should see:
+
+```text
+ATTEST NOW
+     ↓
+VERIFIED ✓
+```
+
+not a cryptography tutorial.
+
+---
+
+# MVP Scope
+
+The first production-quality vertical slice is intentionally narrow.
+
+### P0 — Required
+
+- Seeker integration
+- MWA
+- SIWS
+- server-side SGT verification
+- fresh daily nonce
+- ephemeral evidence key
+- one bounded natural process
+- six evidence checkpoints
+- evidence hash chain
+- one mission
+- DailyAttestation
+- reward settlement
+- streak
+- league
+- Trust Receipt
+
+### P1 — Enhancement
+
+- real second-Seeker BLE demonstration
+- P3 witness workflow
+
+### P2 — Expansion
+
+- ORE integration
+- Curator Network
+- sponsor marketplace
+- developer API
+- advanced mission policies
+
+---
+
+# What We Deliberately Don't Build First
+
+To preserve product focus, the MVP does **not** attempt to build:
+
+- a full advertising network
+- a generic quest marketplace
+- a global merchant network
+- a complete social network
+- an AI employee
+- a universal proof-of-personhood system
+- a permanent sensor surveillance system
+- a complex multi-token economy
+
+The first objective is simple:
+
+> **Make one meaningful mobile action verifiably attestable.**
+
+---
+
+# Demo Scenario
+
+The ideal demonstration takes approximately one minute.
+
+```text
+00s
+Open PRESENCE
+
+05s
+Authenticate with Seeker
+
+10s
+Mission begins
+
+15s
+Evidence collection starts
+
+15–45s
+Natural interaction
+
+45s
+Final checkpoint
+
+50s
+ATTEST verifies session
+
+55s
+On-chain attestation confirmed
+
+60s
+VERIFIED ✓
+
+      +180 XP
+      GOLD #117 → #103
+```
+
+The audience should understand the product without needing the architecture explained first.
+
+Then the architecture explains **why the result can be trusted**.
+
+---
+
+# The Product in One Sentence
+
+> **PRESENCE turns Seeker's trusted device identity into a programmable layer for verified mobile actions, reputation, access, and rewards.**
+
+---
+
+# The Consumer Promise
+
+> **Complete one meaningful action. PRESENCE verifies the process, records your reputation, and rewards you for trusted participation.**
+
+---
+
+# The Developer Promise
+
+> **Define the action. Choose the assurance. Let PRESENCE verify the participation.**
+
+---
+
+# The Sponsor Promise
+
+> **Don't pay for attention. Pay for verified outcomes.**
+
+---
+
+# The Protocol Promise
+
+> **Make participation portable.**
+
+---
+
+# Roadmap
+
+```mermaid
+timeline
+
+    title PRESENCE Roadmap
+
+    MVP : Seeker identity
+         : SIWS
+         : P1 verification
+         : P2 process evidence
+         : Daily Attestation
+         : Trust Receipt
+
+    Phase 2 : P3 co-presence
+             : Reputation
+             : League
+             : Passport
+             : Sponsor missions
+
+    Phase 3 : verifyPresence() API
+             : Developer SDK
+             : Mission marketplace
+             : Curator Network
+
+    Phase 4 : ORE integrations
+             : OEM integrations
+             : Higher assurance primitives
+             : Commerce and real-world participation
+```
+
+---
+
+# Future: `verifyPresence()`
+
+The ultimate abstraction is not the PRESENCE application.
+
+It is a standard way for applications to ask:
+
+```text
+"Can I trust that this action happened
+with the assurance level I require?"
+```
+
+For example:
+
+```typescript
+const verification = await verifyPresence(user, {
+  seeker: true,
+  assurance: "P2",
+  reputation: {
+    minimum: 500
+  },
+  recency: {
+    maximumAge: "7d"
+  }
+});
+```
+
+The application receives:
+
+```text
+PASS
+```
+
+or:
+
+```text
+FAIL
+```
+
+with a verifiable proof reference.
+
+This enables:
+
+```text
+Game
+ └── P2 required for ranked mode
+
+Merchant
+ └── P3 required for physical reward
+
+DAO
+ └── 30-day verified participation required
+
+Protocol
+ └── P2 required for campaign allocation
+```
+
+The same trust layer can power all of them.
+
+---
+
+# The Bigger Vision
+
+Today:
+
+```text
+I completed a mission.
+```
+
+Tomorrow:
+
+```text
+I have a history of verified participation.
+```
+
+Eventually:
+
+```text
+Applications can trust my participation
+without rebuilding their own verification stack.
+```
+
+That is the transition:
+
+```text
+Activity
+   ↓
+Verified Activity
+   ↓
+Portable Reputation
+   ↓
+Programmable Trust
+   ↓
+Open Mobile Economy
+```
+
+---
+
+# Status
+
+> **Hackathon / MVP Build**
+
+Core architecture defined.
+
+Initial implementation target:
+
+**P1 + P2 + one mission + DailyAttestation + Trust Receipt**
+
+Future layers are intentionally separated from the core verification path.
+
+---
+
+# Philosophy
+
+PRESENCE is built around a simple observation:
+
+> **The next generation of mobile applications will not only need to know who you are. They will need to know what you actually did.**
+
+Identity is the beginning of trust.
+
+Transactions are evidence of authorization.
+
+But meaningful participation requires something more:
+
+### **A verifiable process.**
+
+PRESENCE is that layer.
+
+---
+
+## PRESENCE
+
+**ACTION → EVIDENCE → TRUST → VALUE → REPUTATION**
+
+**Built for Seeker. Designed for an open mobile economy.**
