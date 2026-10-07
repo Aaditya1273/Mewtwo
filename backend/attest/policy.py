@@ -22,6 +22,7 @@ class MissionPolicy:
     witness_required: bool
     max_claims_per_identity_per_day: int
     reward_xp: int
+    reward_tokens: int = 0  # devnet test token, minted with the attestation (needs REWARD_MINT)
     timing_tolerance_seconds: int = 3
     extra: dict = field(default_factory=dict)
 
@@ -40,7 +41,7 @@ class MissionPolicy:
             "checkpoint_interval_seconds": self.checkpoint_interval_seconds,
             "min_interactions_per_checkpoint": self.min_interactions_per_checkpoint,
             "witness_required": self.witness_required,
-            "reward": {"xp": self.reward_xp},
+            "reward": {"xp": self.reward_xp, "token": self.reward_tokens},
         }
 
 
@@ -49,7 +50,7 @@ def load_missions(path: Path) -> dict[str, MissionPolicy]:
     missions = {}
     for m in raw:
         reward = m.pop("reward")
-        p = MissionPolicy(reward_xp=reward["xp"], **m)
+        p = MissionPolicy(reward_xp=reward["xp"], reward_tokens=reward.get("token", 0), **m)
         if p.required_assurance not in ASSURANCE_LEVELS:
             raise ValueError(f"{p.mission_id}: unknown assurance {p.required_assurance}")
         if p.witness_required:

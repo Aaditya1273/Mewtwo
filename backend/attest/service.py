@@ -275,12 +275,13 @@ class Attest:
             result = self.attestor.settle(AttestationRecord(
                 wallet=row["wallet"], day=receipt["day"], mission_id=row["mission_id"],
                 evidence_root=row["evidence_root"], assurance_level=int(receipt["assurance"][1:]),
-                sgt_mint=row["sgt_mint"]))
+                sgt_mint=row["sgt_mint"], reward_tokens=self._mission(row["mission_id"]).reward_tokens))
         finally:
             with self.lock:
                 self.settling.discard(session_id)
         settlement = {"status": result.status, "signature": result.signature,
-                      "network": result.network, "detail": result.detail}
+                      "network": result.network, "detail": result.detail,
+                      "reward_tokens": result.reward_tokens, "reward_mint": result.reward_mint}
         if result.signature and result.network in EXPLORER:
             settlement["explorer_url"] = f"https://explorer.solana.com/tx/{result.signature}{EXPLORER[result.network]}"
         receipt["settlement"] = settlement

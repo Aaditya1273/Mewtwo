@@ -24,6 +24,7 @@ class Settings:
     solana_rpc_url: str
     program_id: str | None
     attestor_keypair: str | None
+    reward_mint: str | None
 
     @property
     def chain_id(self) -> str:
@@ -46,4 +47,5 @@ class Settings:
             solana_rpc_url=os.environ.get("SOLANA_RPC_URL", "http://127.0.0.1:8899"),
             program_id=os.environ.get("PROGRAM_ID") or None,
             attestor_keypair=os.environ.get("ATTESTOR_KEYPAIR") or None,
+            reward_mint=os.environ.get("REWARD_MINT") or None,
         )

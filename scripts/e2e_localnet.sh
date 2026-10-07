@@ -20,4 +20,6 @@ solana -u localhost airdrop 10 "$WORK/attestor.json" >/dev/null
 cd "$ROOT/backend"
 export SOLANA_NETWORK=localnet SOLANA_RPC_URL=http://127.0.0.1:8899 PROGRAM_ID ATTESTOR_KEYPAIR="$WORK/attestor.json"
 uv run python -m attest.bootstrap
+export REWARD_MINT="$(spl-token create-token -u localhost --decimals 0 --fee-payer "$WORK/attestor.json" \
+  --mint-authority "$(solana-keygen pubkey "$WORK/attestor.json")" --output json | python3 -c 'import json,sys; print(json.load(sys.stdin)["commandOutput"]["address"])')"
 LOCALNET_ATTESTOR="$WORK/attestor.json" uv run pytest -q -m localnet

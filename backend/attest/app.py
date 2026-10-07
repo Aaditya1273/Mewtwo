@@ -47,7 +47,8 @@ class Verify(BaseModel):
 
 def build_service(s: Settings) -> Attest:
     sgt = identity.DevSgtVerifier() if s.dev_mode else identity.RpcSgtVerifier(s.sgt_rpc_url)
-    attestor = (SolanaAttestor(s.solana_rpc_url, s.network, s.program_id, Path(s.attestor_keypair))
+    attestor = (SolanaAttestor(s.solana_rpc_url, s.network, s.program_id, Path(s.attestor_keypair),
+                               reward_mint=s.reward_mint)
                 if s.program_id and s.attestor_keypair else UnconfiguredAttestor())
     return Attest(store.connect(s.db_path), load_missions(s.missions_path), sgt, attestor,
                   domain=s.domain, chain_id=s.chain_id, dev_mode=s.dev_mode, network=s.network,

@@ -14,6 +14,6 @@
     "min_interactions_per_checkpoint": 1,
     "witness_required": false,
     "max_claims_per_identity_per_day": 1,
-    "reward": { "xp": 180 }
+    "reward": { "xp": 180, "token": 10 }
   }
 ]

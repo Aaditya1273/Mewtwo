@@ -22,5 +22,7 @@ export ATTEST_DEV_MODE=true SOLANA_NETWORK=localnet SOLANA_RPC_URL=http://127.0.
        PROGRAM_ID ATTESTOR_KEYPAIR="$STATE/attestor.json" ATTEST_DB="$STATE/attest.db"
 rm -f "$STATE/attest.db"*  # the validator was reset, so reset off-chain state with it
 uv run python -m attest.bootstrap
+export REWARD_MINT="$(spl-token create-token -u localhost --decimals 0 --fee-payer "$STATE/attestor.json" \
+  --mint-authority "$(solana-keygen pubkey "$STATE/attestor.json")" --output json | python3 -c 'import json,sys; print(json.load(sys.stdin)["commandOutput"]["address"])')"
 echo "ATTEST (DEVELOPMENT MODE) on :8787, program $PROGRAM_ID on localnet"
 uv run python -m attest.app

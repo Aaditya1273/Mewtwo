@@ -7,7 +7,8 @@ import pytest
 from solders.pubkey import Pubkey
 
 from attest import identity
-from attest.settlement import AttestationRecord, SolanaAttestor, pdas, record_attestation_ix
+from attest.settlement import (ATA_PROGRAM, TOKEN_PROGRAM, AttestationRecord, SolanaAttestor,
+                               associated_token_address, pdas, record_attestation_ix, reward_ixs)
 
 from .sim import SimDevice
 
@@ -62,16 +63,31 @@ def test_record_attestation_ix_matches_program_layout():
     assert ix.accounts[1].is_signer and not ix.accounts[2].is_signer
 
 
+def test_reward_ixs_layout():
+    payer, owner, mint = Pubkey.new_unique(), Pubkey.new_unique(), Pubkey.new_unique()
+    create, mint_to = reward_ixs(payer, owner, mint, 10)
+    ata = associated_token_address(owner, mint)
+    assert create.program_id == ATA_PROGRAM and bytes(create.data) == bytes([1])  # CreateIdempotent
+    assert create.accounts[1].pubkey == ata
+    assert mint_to.program_id == TOKEN_PROGRAM and bytes(mint_to.data) == bytes([7]) + (10).to_bytes(8, "little")
+    assert [a.pubkey for a in mint_to.accounts] == [mint, ata, payer] and mint_to.accounts[2].is_signer
+
+
 @pytest.mark.localnet
 @pytest.mark.skipif("LOCALNET_ATTESTOR" not in os.environ, reason="run via scripts/e2e_localnet.sh")
 def test_localnet_settlement_writes_and_blocks_second_write():
     a = SolanaAttestor(os.environ.get("SOLANA_RPC_URL", "http://127.0.0.1:8899"), "localnet",
-                       os.environ.get("PROGRAM_ID", PROGRAM_ID), Path(os.environ["LOCALNET_ATTESTOR"]))
+                       os.environ.get("PROGRAM_ID", PROGRAM_ID), Path(os.environ["LOCALNET_ATTESTOR"]),
+                       reward_mint=os.environ.get("REWARD_MINT"))
     day = int(a._rpc("getBlockTime", [a._rpc("getSlot", [])]) // 86_400)
     rec = AttestationRecord(wallet=SimDevice().wallet, day=day, mission_id="daily-focus",
-                            evidence_root=bytes(32), assurance_level=2, sgt_mint=None)
+                            evidence_root=bytes(32), assurance_level=2, sgt_mint=None, reward_tokens=10)
     first = a.settle(rec)
     assert first.status == "CONFIRMED", first.detail
+    if a.reward_mint:
+        ata = associated_token_address(Pubkey.from_string(rec.wallet), a.reward_mint)
+        bal = a._rpc("getTokenAccountBalance", [str(ata), {"commitment": "confirmed"}])["value"]["amount"]
+        assert (first.reward_tokens, bal) == (10, "10")
     _, _, att = pdas(a.program_id, Pubkey.from_string(rec.wallet), day)
     info = a._rpc("getAccountInfo", [str(att), {"encoding": "base64", "commitment": "confirmed"}])["value"]
     assert info is not None and info["owner"] == str(a.program_id)

@@ -5,7 +5,7 @@
 | Threat | Mitigation in this code | Residual risk |
 |---|---|---|
 | **Replay** | Server nonce (UNIQUE), single-use state machine: any repeated step returns `NONCE_REPLAY` | — |
-| **Double settlement** | SQLite claim registry checked under a lock; on-chain `DailyAttestation` PDA = (profile, day) can be created once | — |
+| **Double settlement** | SQLite claim registry checked under a lock; on-chain `DailyAttestation` PDA = (profile, day) can be created once; the token reward is in the same transaction, so it inherits that guard | — |
 | **Client tampering** | Client never reports results; server recomputes hashes, measures time, evaluates policy | A modified client can still *fake process signals* (taps, foreground). See below. |
 | **Fake / compressed evidence** | Hash chain recomputed server-side; checkpoint cadence and total duration use server receive times | Real-time scripted input on a real device |
 | **Device farming** | One claim per SGT mint per mission per day (production) | Dev mode keys claims by wallet instead |
