@@ -128,6 +128,11 @@ goes on-chain.
 `record_attestation` requires the configured attestor signature and a day of today or yesterday (UTC). The attestor
 pays rent, so users need no SOL.
 
+**Reward settlement.** If `REWARD_MINT` is set, the mission's `reward.token` amount is minted to the user's token
+account **in the same transaction** as `record_attestation`. The reward cannot land without the attestation, and the
+one-per-day PDA stops it landing twice. The mint is a **devnet test token** whose mint authority is the attestor; it
+has no value. XP stays off-chain in ATTEST.
+
 ## 12. Android architecture
 
 `PresenceViewModel` orchestrates the session. Composables only render `UiState`. `WalletRepository` wraps MWA
@@ -149,7 +154,7 @@ Explicit failure reasons: `SESSION_EXPIRED`, `INVALID_NONCE`, `NONCE_REPLAY`, `I
 
 Built only from the server's verification output: assurance, server-measured duration, checkpoint count, evidence
 root, each check's status (`PASSED` / `DEV_BYPASS`), XP, league and rank before → after, streak, and settlement
-(`CONFIRMED` + tx / `NOT_CONFIGURED` / `FAILED`). "View evidence" shows the root, session, checks, every checkpoint
+(`CONFIRMED` + tx / `NOT_CONFIGURED` / `FAILED`), plus the test-token amount when one was minted. "View evidence" shows the root, session, checks, every checkpoint
 hash and the transaction.
 
 **Reputation is explicit counters.** `reputation` = sum of attested assurance levels (same rule on-chain and
@@ -175,7 +180,7 @@ timeline
 - **Not tested on a Seeker device.** Production SGT verification is implemented and unit-tested against
   the documented Token-2022 extension layout, but not exercised against a real SGT.
 - Development mode bypasses SGT and is labeled everywhere it applies.
-- The program is tested on localnet only; it is **not deployed to devnet/mainnet**.
+- Mainnet is not used. Devnet setup: `solana program deploy` + `scripts/devnet_setup.sh`. Rewards are a valueless devnet test token, not SKR.
 - P2 signals can be produced by automation running in real time on a real device (see docs/security.md).
 - ATTEST is a single process with SQLite and a global lock, and the attestor key is a file.
 - P3/P4, BLE, sponsor marketplace, ORE, curator network: not implemented.
@@ -191,8 +196,12 @@ Solana CLI (Agave) 4.3, Anchor 1.2.1, and an isolated rustup for `cargo build-sb
 # Program
 anchor build
 
-# Full local stack: validator + program + config + ATTEST (DEVELOPMENT MODE) on :8787
+# Full local stack: validator + program + config + reward mint + ATTEST (DEVELOPMENT MODE) on :8787
 scripts/dev_stack.sh
+
+# Devnet: deploy once, then attestor key + Config + reward mint → .devnet/attest.env
+solana program deploy target/deploy/presence.so --program-id target/deploy/presence-keypair.json -u devnet
+scripts/devnet_setup.sh
 
 # Android (emulator reaches the host at 10.0.2.2)
 ./gradlew :app:installDebug
