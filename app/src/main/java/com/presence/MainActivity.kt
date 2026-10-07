@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.presence.session.PresenceViewModel
 import com.presence.session.Screen
 import com.presence.ui.screens.ActiveScreen
+import com.presence.ui.screens.CountdownScreen
 import com.presence.ui.screens.FailedScreen
 import com.presence.ui.screens.HomeScreen
 import com.presence.ui.screens.MissionScreen
@@ -70,6 +71,7 @@ fun PresenceRoot(sender: ActivityResultSender, vm: PresenceViewModel = hiltViewM
             Screen.Home -> HomeScreen(s, onConnect = { vm.connect(sender) }, onAttest = vm::openMission,
                 onDisconnect = vm::disconnect, onRetry = { vm.refresh() })
             Screen.Mission -> MissionScreen(s, onBack = vm::home, onStart = { vm.startMission(sender) })
+            is Screen.Countdown -> CountdownScreen(screen.seconds)
             is Screen.Active -> ActiveScreen(screen, onPulse = vm::onPulse)
             is Screen.Verifying -> VerifyingScreen(screen)
             is Screen.Result -> ReceiptScreen(screen, onDone = vm::home)

@@ -25,7 +25,7 @@ class AttestException(val reason: String, val detail: String = "") : Exception("
 
 @Serializable data class Health(val mode: String, val network: String, val settlement: String)
 
-@Serializable data class Reward(val xp: Int)
+@Serializable data class Reward(val xp: Int, val token: Int = 0)
 
 @Serializable
 data class MissionPolicy(
@@ -70,6 +70,8 @@ data class Settlement(
     val network: String? = null,
     val detail: String? = null,
     @SerialName("explorer_url") val explorerUrl: String? = null,
+    @SerialName("reward_tokens") val rewardTokens: Int = 0,
+    @SerialName("reward_mint") val rewardMint: String? = null,
 )
 
 @Serializable

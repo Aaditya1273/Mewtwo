@@ -118,6 +118,12 @@ class PresenceViewModel @Inject constructor(
                 log(session.sessionId, "authorized", auth.eligibility)
                 _state.update { it.copy(busy = false) }
 
+                // Short countdown after returning from the wallet so the first window isn't missed.
+                // Server timing starts at authorize; this only makes the first window longer, never shorter.
+                for (n in 3 downTo 1) {
+                    _state.update { it.copy(screen = Screen.Countdown(n)) }
+                    delay(1000)
+                }
                 val chain = EvidenceChain(session.sessionId, session.nonce)
                 runProcess(session.sessionId, session.policy, chain, key)
 

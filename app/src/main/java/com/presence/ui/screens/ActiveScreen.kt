@@ -90,3 +90,16 @@ fun ActiveScreen(a: Screen.Active, onPulse: () -> Unit) = Page {
         modifier = Modifier.fillMaxWidth(),
     )
 }
+
+@Composable
+fun CountdownScreen(seconds: Int) = Page {
+    Header(null)
+    Spacer(Modifier.weight(1f))
+    Eyebrow("Get ready", modifier = Modifier.fillMaxWidth())
+    Gap(8)
+    Text("$seconds", style = MaterialTheme.typography.displayLarge, color = Ink.Text)
+    Gap(8)
+    Text("Tap the circle once in every 10-second window and stay in the app.",
+        style = MaterialTheme.typography.bodyLarge, color = Ink.Muted)
+    Spacer(Modifier.weight(1f))
+}

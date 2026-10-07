@@ -14,6 +14,7 @@ data class Check(val label: String, val status: CheckStatus = CheckStatus.PENDIN
 sealed interface Screen {
     data object Home : Screen
     data object Mission : Screen
+    data class Countdown(val seconds: Int) : Screen
     data class Active(
         val elapsedMs: Long,
         val checkpointsDone: Int,

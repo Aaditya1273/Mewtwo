@@ -89,6 +89,11 @@ fun ReceiptScreen(r: Screen.Result, onDone: () -> Unit) = Page {
         }
         Gap(24)
         Text("+${rc.reward.xp} XP", style = MaterialTheme.typography.displayMedium, color = Ink.Text)
+        // Shown only when the token was actually minted in the confirmed attestation transaction.
+        if (rc.settlement.rewardTokens > 0) {
+            Text("+${rc.settlement.rewardTokens} PRESENCE test tokens · ${rc.settlement.network}",
+                style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+        }
         Gap(4)
         Text("${rc.leagueBefore} #${rc.rankBefore}  →  ${rc.leagueAfter} #${rc.rankAfter}",
             style = MaterialTheme.typography.titleMedium, color = Ink.Text)
@@ -130,6 +135,7 @@ private fun Evidence(r: Screen.Result) {
         rc.checks.forEach { (k, v) -> Mono(k, v) }
         r.checkpointHashes.forEachIndexed { i, h -> Mono("checkpoint_$i", h) }
         rc.settlement.signature?.let { Mono("tx", it) }
+        rc.settlement.rewardMint?.let { Mono("reward_mint", it) }
         rc.settlement.detail?.let { Mono("settlement", it) }
         rc.settlement.explorerUrl?.let { url ->
             TextButton(onClick = { uri.openUri(url) }) {
