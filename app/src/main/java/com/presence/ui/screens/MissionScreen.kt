@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +22,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.presence.session.UiState
 import com.presence.ui.theme.Ink
+
+@Composable
+private fun Guarantee(title: String, body: String) = Row {
+    Text("◆", style = MaterialTheme.typography.labelMedium, color = Ink.Verified, modifier = Modifier.padding(top = 3.dp))
+    HGap(12)
+    Column {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = Ink.Text)
+        Text(body, style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+    }
+}
 
 @Composable
 fun MissionScreen(s: UiState, onBack: () -> Unit, onStart: () -> Unit) = Page {
@@ -53,6 +64,14 @@ fun MissionScreen(s: UiState, onBack: () -> Unit, onStart: () -> Unit) = Page {
         Stat("Assurance", assuranceLabel(m.requiredAssurance))
         Stat("Duration", "${m.durationSeconds} seconds")
         Stat("Checkpoints", "${m.requiredCheckpoints}")
+    }
+    Gap(22)
+    Eyebrow("What PRESENCE verifies")
+    Gap(10)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Guarantee("This device", "Your wallet signs a one-time server code. On Seeker, one device = one claim a day.")
+        Guarantee("This process", "Every 10 s a signed, chained checkpoint. The server times it, not your phone.")
+        Guarantee("On-chain", "If it passes, a permanent attestation is written to Solana.")
     }
 
     Spacer(Modifier.weight(1f))

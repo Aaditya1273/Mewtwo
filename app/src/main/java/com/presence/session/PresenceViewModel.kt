@@ -181,15 +181,21 @@ class PresenceViewModel @Inject constructor(
         windowForeground = true
         anyBackground = false
         var done = 0
+        // Each window's presence check appears at an unpredictable moment, 1.5–6 s into the window.
+        val promptAt = List(policy.requiredCheckpoints) { 1500L + (Math.random() * 4500).toLong() }
 
         fun publish(confirmed: Boolean) = _state.update {
+            val elapsed = SystemClock.elapsedRealtime() - start
+            val window = (elapsed / intervalMs).toInt().coerceAtMost(policy.requiredCheckpoints - 1)
             it.copy(screen = Screen.Active(
-                elapsedMs = SystemClock.elapsedRealtime() - start,
+                elapsedMs = elapsed,
                 checkpointsDone = done,
                 checkpointsTotal = policy.requiredCheckpoints,
                 durationMs = durationMs,
                 confirmedThisWindow = confirmed,
                 leftForeground = anyBackground,
+                sealed = chain.hashes.take(done).map { h -> h.toHex() },
+                promptVisible = !confirmed && elapsed % intervalMs >= promptAt[window],
             ))
         }
         publish(false)
@@ -198,7 +204,7 @@ class PresenceViewModel @Inject constructor(
             while (isActive) {
                 val a = _state.value.screen as? Screen.Active
                 publish(a?.confirmedThisWindow ?: false)
-                delay(250)
+                delay(200)
             }
         }
         try {

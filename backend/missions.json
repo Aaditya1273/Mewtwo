@@ -4,7 +4,7 @@
     "name": "Daily Focus Proof",
     "steps": [
       "Stay in the session for 60 seconds",
-      "Confirm each pulse as it appears (6 total)",
+      "Answer the presence check in each 10-second window (6 total)",
       "Keep PRESENCE in the foreground until the final checkpoint"
     ],
     "required_assurance": "P2",

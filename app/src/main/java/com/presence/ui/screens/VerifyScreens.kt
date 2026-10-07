@@ -1,5 +1,26 @@
 package com.presence.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -69,60 +90,109 @@ private fun statusNote(status: CheckStatus): Pair<String, Color>? = when (status
 @Composable
 fun ReceiptScreen(r: Screen.Result, onDone: () -> Unit) = Page {
     val rc: Receipt = r.receipt
+    val ctx = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     var showEvidence by rememberSaveable { mutableStateOf(false) }
+    val seal = remember { Animatable(0.6f) }
+    LaunchedEffect(Unit) {
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        seal.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = 300f))
+    }
+    val s = rc.settlement
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
         Header(rc.mode)
-        Gap(36)
-        Eyebrow("Trust receipt")
-        Gap(8)
-        Text("VERIFIED ✓", style = MaterialTheme.typography.displayMedium, color = Ink.Verified)
-        Gap(6)
-        Text("${assuranceLabel(rc.assurance)} ATTESTED", style = MaterialTheme.typography.labelLarge, color = Ink.Text)
-        Text(rc.missionName, style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
-        Gap(28)
-        Divider()
-        Gap(18)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Stat("Duration", "${rc.durationSeconds.toInt()} seconds")
-            Stat("Evidence", "${rc.checkpointCount} checkpoints")
-            Stat("Streak", if (rc.streak == 1) "1 day" else "${rc.streak} days")
+        Gap(20)
+        // The certificate
+        Column(
+            Modifier.fillMaxWidth()
+                .border(1.dp, Ink.Verified.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                .background(Ink.Surface, RoundedCornerShape(20.dp))
+                .padding(20.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Eyebrow("Trust receipt")
+                Spacer(Modifier.weight(1f))
+                Eyebrow(rc.sessionId.take(8), color = Ink.Muted)
+            }
+            Gap(14)
+            Text("VERIFIED ✓", style = MaterialTheme.typography.displayMedium, color = Ink.Verified,
+                modifier = Modifier.scale(seal.value))
+            Text("${assuranceLabel(rc.assurance)} ATTESTED", style = MaterialTheme.typography.labelLarge, color = Ink.Text)
+            Text(rc.missionName, style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+            Gap(18)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Stat("Duration", "${rc.durationSeconds.toInt()}s")
+                Stat("Evidence", "${rc.checkpointCount} sealed")
+                Stat("Streak", if (rc.streak == 1) "1 day" else "${rc.streak} days")
+            }
+            Gap(18)
+            Perforation()
+            Gap(18)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("+${rc.reward.xp} XP", style = MaterialTheme.typography.headlineMedium, color = Ink.Text)
+                    if (s.rewardTokens > 0) Text("+${s.rewardTokens} test tokens", style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+                    Gap(6)
+                    Text("${rc.leagueBefore} #${rc.rankBefore} → ${rc.leagueAfter} #${rc.rankAfter}",
+                        style = MaterialTheme.typography.titleMedium, color = Ink.Text)
+                    Gap(10)
+                    val (settleText, settleColor) = when (s.status) {
+                        "CONFIRMED" -> "Anchored on ${s.network}" to Ink.Verified
+                        "NOT_CONFIGURED" -> "Not anchored (not configured)" to Ink.Muted
+                        else -> "Anchoring failed" to Ink.Fail
+                    }
+                    Text(settleText, style = MaterialTheme.typography.bodyMedium, color = settleColor)
+                }
+                s.explorerUrl?.let { Qr(it, 104) }
+            }
         }
-        Gap(24)
-        Text("+${rc.reward.xp} XP", style = MaterialTheme.typography.displayMedium, color = Ink.Text)
-        // Shown only when the token was actually minted in the confirmed attestation transaction.
-        if (rc.settlement.rewardTokens > 0) {
-            Text("+${rc.settlement.rewardTokens} PRESENCE test tokens · ${rc.settlement.network}",
-                style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
-        }
-        Gap(4)
-        Text("${rc.leagueBefore} #${rc.rankBefore}  →  ${rc.leagueAfter} #${rc.rankAfter}",
-            style = MaterialTheme.typography.titleMedium, color = Ink.Text)
-        Gap(24)
-        Divider()
-        Gap(16)
-        val s = rc.settlement
-        val (settleText, settleColor) = when (s.status) {
-            "CONFIRMED" -> "Anchored on ${s.network}" to Ink.Verified
-            "NOT_CONFIGURED" -> "On-chain anchoring not configured" to Ink.Muted
-            else -> "On-chain anchoring failed" to Ink.Fail
-        }
-        Eyebrow("DailyAttestation")
-        Gap(6)
-        Text(settleText, style = MaterialTheme.typography.bodyLarge, color = settleColor)
         if (rc.mode == "development") {
-            Gap(6)
-            Text("Development mode: Seeker eligibility was bypassed. This receipt is not production verification.",
+            Gap(10)
+            Text("Development mode: Seeker eligibility was bypassed. Not production verification.",
                 style = MaterialTheme.typography.bodyMedium, color = Ink.Dev)
         }
-
-        TextButton(onClick = { showEvidence = !showEvidence }) {
-            Text(if (showEvidence) "HIDE EVIDENCE" else "VIEW EVIDENCE",
-                style = MaterialTheme.typography.labelLarge, color = Ink.Text)
+        Row {
+            TextButton(onClick = { showEvidence = !showEvidence }) {
+                Text(if (showEvidence) "HIDE EVIDENCE" else "VIEW EVIDENCE",
+                    style = MaterialTheme.typography.labelLarge, color = Ink.Text)
+            }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { shareReceipt(ctx, rc) }) {
+                Text("SHARE", style = MaterialTheme.typography.labelLarge, color = Ink.Text)
+            }
         }
         if (showEvidence) Evidence(r)
     }
     Gap(12)
     PrimaryButton("Done", onClick = onDone)
+}
+
+@Composable
+private fun Perforation() = Canvas(Modifier.fillMaxWidth().height(1.dp)) {
+    drawLine(Ink.Line, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 2f,
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+}
+
+/** QR code of the on-chain proof link. */
+@Composable
+private fun Qr(text: String, sizeDp: Int) {
+    val bits = remember(text) { QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0) }
+    Canvas(Modifier.size(sizeDp.dp).background(Ink.Text, RoundedCornerShape(8.dp)).padding(6.dp)) {
+        val cell = size.width / bits.width
+        for (y in 0 until bits.height) for (x in 0 until bits.width) if (bits[x, y])
+            drawRect(Ink.Bg, Offset(x * cell, y * cell), Size(cell + 0.5f, cell + 0.5f))
+    }
+}
+
+private fun shareReceipt(ctx: Context, rc: Receipt) {
+    val text = buildString {
+        append("VERIFIED ✓ ${assuranceLabel(rc.assurance)} attested by PRESENCE\n")
+        append("${rc.missionName}: ${rc.durationSeconds.toInt()}s, ${rc.checkpointCount} sealed checkpoints\n")
+        rc.settlement.explorerUrl?.let { append("On-chain proof: $it\n") }
+        if (rc.mode == "development") append("(development mode)\n")
+    }
+    ctx.startActivity(Intent.createChooser(
+        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Share proof"))
 }
 
 @Composable

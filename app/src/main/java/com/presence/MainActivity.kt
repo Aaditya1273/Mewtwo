@@ -2,6 +2,11 @@ package com.presence
 
 import android.graphics.Color
 import android.os.Bundle
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -67,7 +72,10 @@ fun PresenceRoot(sender: ActivityResultSender, vm: PresenceViewModel = hiltViewM
     BackHandler(enabled = s.screen != Screen.Home) { vm.home() }
 
     Box(Modifier.fillMaxSize()) {
-        when (val screen = s.screen) {
+        // Crossfade between screens; Active/Countdown updates keep the same key so they don't re-animate.
+        AnimatedContent(s.screen, contentKey = { it::class }, transitionSpec = { fadeIn(tween(280)) togetherWith fadeOut(tween(180)) },
+            label = "screen") { screen ->
+        when (screen) {
             Screen.Home -> HomeScreen(s, onConnect = { vm.connect(sender) }, onAttest = vm::openMission,
                 onDisconnect = vm::disconnect, onRetry = { vm.refresh() })
             Screen.Mission -> MissionScreen(s, onBack = vm::home, onStart = { vm.startMission(sender) })
@@ -76,6 +84,7 @@ fun PresenceRoot(sender: ActivityResultSender, vm: PresenceViewModel = hiltViewM
             is Screen.Verifying -> VerifyingScreen(screen)
             is Screen.Result -> ReceiptScreen(screen, onDone = vm::home)
             is Screen.Failed -> FailedScreen(screen, onRetry = vm::openMission, onHome = vm::home)
+        }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }

@@ -22,6 +22,10 @@ sealed interface Screen {
         val durationMs: Long,
         val confirmedThisWindow: Boolean,
         val leftForeground: Boolean,
+        /** Hex hashes of checkpoints the server has accepted, in order. */
+        val sealed: List<String> = emptyList(),
+        /** The presence check for the current window is showing. */
+        val promptVisible: Boolean = false,
     ) : Screen
     data class Verifying(val checks: List<Check>) : Screen
     data class Result(val receipt: Receipt, val checkpointHashes: List<String>) : Screen

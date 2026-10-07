@@ -79,20 +79,19 @@ def run_mission(skip_window: int | None = None, leave_at: float | None = None) -
     tap("For 60 seconds only")       # consent row
     tap("Start mission")
     tap("AUTHORIZE")                  # wallet signs the SIWS message
-    circle = wait_for("TAP TO", 20)   # countdown, then the active session
+    wait_for("Evidence chain", 20)    # countdown, then the active session
     start = time.time()
     left = False
-    while time.time() - start < 62:  # the session is 60 s; taps every 2.5 s cover each window
+    while time.time() - start < 62:   # answer each window's presence check when it appears
         elapsed = time.time() - start
         if leave_at is not None and not left and elapsed > leave_at:
             adb("shell", "input", "keyevent", "KEYCODE_HOME")
             time.sleep(4)
             adb("shell", "am", "start", "-n", "com.presence/.MainActivity")
             left = True
-            time.sleep(1)
-        if skip_window is None or int(elapsed // 10) != skip_window:
-            adb("shell", "input", "tap", str(circle[0]), str(circle[1]))
-        time.sleep(2.5)
+        if (xy := find("I'M HERE")) and (skip_window is None or int(elapsed // 10) != skip_window):
+            adb("shell", "input", "tap", str(xy[0]), str(xy[1]))
+        time.sleep(0.3)
     end = time.time() + 60
     while time.time() < end:
         t = texts()
