@@ -173,9 +173,9 @@ class Attest:
                 self._reject(row, e)
                 raise
             with self.db:
-                self.db.execute("INSERT INTO checkpoints VALUES (?,?,?,?,?,?,?,?)",
+                self.db.execute("INSERT INTO checkpoints VALUES (?,?,?,?,?,?,?,?,?)",
                                 (session_id, cp.index, cp.timestamp_ms, cp.elapsed_ms, int(cp.foreground),
-                                 cp.interactions, expected, self.clock()))
+                                 cp.interactions, cp.response_ms, expected, self.clock()))
                 self.db.execute("UPDATE sessions SET chain_head=? WHERE id=?", (expected, session_id))
         event("checkpoint", session_id, index=cp.index)
         return {"accepted": True, "index": cp.index}
@@ -204,17 +204,18 @@ class Attest:
             row = self._session(session_id)
             self._expect(row, "SUBMITTED")
             policy = self._mission(row["mission_id"])
-            cps = [ObservedCheckpoint(r["idx"], r["received_at"], bool(r["foreground"]), r["interactions"])
+            cps = [ObservedCheckpoint(r["idx"], r["received_at"], bool(r["foreground"]), r["interactions"],
+                                      r["response_ms"])
                    for r in self.db.execute("SELECT * FROM checkpoints WHERE session_id=? ORDER BY idx",
                                             (session_id,))]
             # P1 = wallet signature + device eligibility (authorize); P2 = + continuous process evidence
             # whose root matched (submit). P3/P4 need witnesses/hardware attestation: not implemented.
             achieved = 2
             day = utc_day(self.clock())
+            seq = self._claims_today(self._identity_key(row), policy.mission_id, day)
             try:
                 evaluate(policy, row["started_at"], row["submitted_at"], cps, achieved)
-                if self._claims_today(self._identity_key(row), policy.mission_id, day) \
-                        >= policy.max_claims_per_identity_per_day:
+                if seq >= policy.max_claims_per_identity_per_day:
                     raise AttestError(Reason.ALREADY_CLAIMED, "daily claim limit reached for this device")
             except AttestError as e:
                 self._reject(row, e)
@@ -223,6 +224,10 @@ class Attest:
 
             profile = self._profile(row["wallet"])
             league_before, rank_before = league_for(profile.xp), self._rank(profile.xp)
+            # Reserve the token reward from the sponsor's pool; unfunded missions still attest, unpaid.
+            reward_base = self._reward_base(policy)
+            funded = reward_base > 0 and self._pool_remaining(policy.mission_id) >= reward_base
+            reserved = reward_base if funded else 0
             profile.apply_verified(day, achieved, policy.reward_xp)
             receipt = {
                 "status": "VERIFIED",
@@ -242,7 +247,9 @@ class Attest:
                     "mission_policy": "PASSED",
                     "replay": "PASSED",
                 },
-                "reward": {"xp": policy.reward_xp},
+                "reward": {"xp": policy.reward_xp, "token": reserved / 10 ** self._decimals(),
+                           "symbol": self.symbol(policy),
+                           "funding": "RESERVED" if funded else "UNFUNDED" if reward_base else "NONE"},
                 "league_before": league_before,
                 "rank_before": rank_before,
                 "day": day,
@@ -250,8 +257,8 @@ class Attest:
                 "settlement": {"status": "PENDING"},
             }
             with self.db:
-                self.db.execute("INSERT INTO claims VALUES (?,?,?,?)",
-                                (session_id, self._identity_key(row), policy.mission_id, day))
+                self.db.execute("INSERT INTO claims VALUES (?,?,?,?,?,?)",
+                                (session_id, self._identity_key(row), policy.mission_id, day, seq, reserved))
                 self._save_profile(profile)
                 receipt.update(league_after=league_for(profile.xp), rank_after=self._rank(profile.xp),
                                streak=profile.current_streak, total_xp=profile.xp)
@@ -271,17 +278,20 @@ class Attest:
                 raise AttestError(Reason.INVALID_STATE, "settlement already in progress")
             self.settling.add(session_id)
             receipt = json.loads(row["receipt"])
+            claim = self.db.execute("SELECT seq, reward_base FROM claims WHERE session_id=?", (session_id,)).fetchone()
         try:
             result = self.attestor.settle(AttestationRecord(
                 wallet=row["wallet"], day=receipt["day"], mission_id=row["mission_id"],
                 evidence_root=row["evidence_root"], assurance_level=int(receipt["assurance"][1:]),
-                sgt_mint=row["sgt_mint"], reward_tokens=self._mission(row["mission_id"]).reward_tokens))
+                sgt_mint=row["sgt_mint"], seq=claim["seq"], reward_base=claim["reward_base"]))
         finally:
             with self.lock:
                 self.settling.discard(session_id)
         settlement = {"status": result.status, "signature": result.signature,
                       "network": result.network, "detail": result.detail,
-                      "reward_tokens": result.reward_tokens, "reward_mint": result.reward_mint}
+                      "reward_token": result.reward_base / 10 ** self._decimals(),
+                      "reward_symbol": self.symbol(self._mission(row["mission_id"])),
+                      "reward_mint": result.reward_mint}
         if result.signature and result.network in EXPLORER:
             settlement["explorer_url"] = f"https://explorer.solana.com/tx/{result.signature}{EXPLORER[result.network]}"
         receipt["settlement"] = settlement
@@ -291,6 +301,57 @@ class Attest:
                             (state, json.dumps(receipt), session_id))
         event("settlement", session_id, status=result.status)
         return settlement
+
+    # ---------- sponsor pools ----------
+
+    def symbol(self, policy: MissionPolicy) -> str:
+        """Off mainnet the reward mint is a test token; never let a receipt call it SKR."""
+        return policy.reward_symbol if self.network == "mainnet" else f"{policy.reward_symbol}-TEST"
+
+    def _decimals(self) -> int:
+        return getattr(self.attestor, "reward_decimals", 0) or 0
+
+    def _reward_base(self, policy: MissionPolicy) -> int:
+        if not getattr(self.attestor, "reward_mint", None):
+            return 0
+        return round(policy.reward_token * 10 ** self._decimals())
+
+    def _pool_remaining(self, mission_id: str) -> int:
+        deposited = self.db.execute("SELECT COALESCE(SUM(amount_base),0) FROM sponsor_deposits WHERE mission_id=?",
+                                    (mission_id,)).fetchone()[0]
+        reserved = self.db.execute("SELECT COALESCE(SUM(reward_base),0) FROM claims WHERE mission_id=?",
+                                   (mission_id,)).fetchone()[0]
+        return deposited - reserved
+
+    def sponsor_deposit(self, mission_id: str, signature: str) -> dict:
+        """Credit a mission's pool with a confirmed on-chain transfer into the attestor's pool account."""
+        self._mission(mission_id)
+        try:
+            dep = self.attestor.verify_deposit(signature)
+        except RuntimeError as e:
+            raise AttestError(Reason.INVALID_STATE, str(e)) from e
+        try:
+            with self.lock, self.db:
+                self.db.execute("INSERT INTO sponsor_deposits VALUES (?,?,?,?,?)",
+                                (signature, mission_id, dep.amount_base, dep.depositor, self.clock()))
+        except sqlite3.IntegrityError as e:
+            raise AttestError(Reason.NONCE_REPLAY, "deposit transaction already credited") from e
+        event("sponsor_deposit", None, mission_id=mission_id, amount_base=dep.amount_base)
+        return {"mission_id": mission_id, "credited": dep.amount_base / 10 ** self._decimals(),
+                "depositor": dep.depositor, **self.pools()[mission_id]}
+
+    def pools(self) -> dict:
+        d = 10 ** self._decimals() if self._decimals() else 1
+        out = {}
+        for m in self.missions.values():
+            deposited = self.db.execute("SELECT COALESCE(SUM(amount_base),0) FROM sponsor_deposits WHERE mission_id=?",
+                                        (m.mission_id,)).fetchone()[0]
+            remaining = self._pool_remaining(m.mission_id)
+            out[m.mission_id] = {"symbol": self.symbol(m), "sponsor": m.sponsor,
+                                 "deposited": deposited / d, "remaining": remaining / d,
+                                 "reward_per_claim": m.reward_token,
+                                 "claims_funded": int(remaining // max(self._reward_base(m), 1)) if self._reward_base(m) else 0}
+        return out
 
     # ---------- reads ----------
 
@@ -303,4 +364,8 @@ class Attest:
     def profile(self, wallet: str) -> dict:
         identity.decode_wallet(wallet)
         p = self._profile(wallet)
-        return p.view(utc_day(self.clock()), self._rank(p.xp) if p.verified_count else None)
+        today = utc_day(self.clock())
+        claims = dict(self.db.execute(
+            "SELECT c.mission_id, COUNT(*) FROM claims c JOIN sessions s ON s.id = c.session_id "
+            "WHERE s.wallet=? AND c.day=? GROUP BY c.mission_id", (wallet, today)).fetchall())
+        return {**p.view(today, self._rank(p.xp) if p.verified_count else None), "claims_today": claims}

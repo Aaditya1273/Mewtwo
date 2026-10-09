@@ -1,6 +1,8 @@
 package com.presence.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,10 +45,19 @@ fun MissionScreen(s: UiState, onBack: () -> Unit, onStart: () -> Unit) = Page {
         Spacer(Modifier.weight(1f))
         if (s.health?.mode == "development") Chip("Development mode", Ink.Dev)
     }
-    Gap(28)
+    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+    Gap(20)
     Eyebrow("Mission")
     Gap(10)
     Text(m.name.uppercase(), style = MaterialTheme.typography.headlineMedium, color = Ink.Text)
+    if (m.description.isNotBlank()) {
+        Gap(8)
+        Text(m.description, style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+    }
+    if (m.sponsor.isNotBlank()) {
+        Gap(6)
+        Text(m.sponsor, style = MaterialTheme.typography.labelSmall, color = Ink.Dev)
+    }
     Gap(20)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         m.steps.forEachIndexed { i, step ->
@@ -63,7 +74,7 @@ fun MissionScreen(s: UiState, onBack: () -> Unit, onStart: () -> Unit) = Page {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Stat("Assurance", assuranceLabel(m.requiredAssurance))
         Stat("Duration", "${m.durationSeconds} seconds")
-        Stat("Checkpoints", "${m.requiredCheckpoints}")
+        Stat("Reward", "+${m.reward.xp} XP" + if (m.reward.token > 0) " · ${formatToken(m.reward.token)} ${m.reward.symbol}" else "")
     }
     Gap(22)
     Eyebrow("What PRESENCE verifies")
@@ -74,8 +85,9 @@ fun MissionScreen(s: UiState, onBack: () -> Unit, onStart: () -> Unit) = Page {
         Guarantee("On-chain", "If it passes, a permanent attestation is written to Solana.")
     }
 
-    Spacer(Modifier.weight(1f))
-
+    Gap(8)
+    }
+    Gap(12)
     Row(Modifier.fillMaxWidth().clickable { consent = !consent }, verticalAlignment = Alignment.Top) {
         Checkbox(checked = consent, onCheckedChange = { consent = it },
             colors = CheckboxDefaults.colors(checkedColor = Ink.Text, checkmarkColor = Ink.Bg, uncheckedColor = Ink.Muted))

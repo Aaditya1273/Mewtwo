@@ -76,7 +76,7 @@ fun PresenceRoot(sender: ActivityResultSender, vm: PresenceViewModel = hiltViewM
         AnimatedContent(s.screen, contentKey = { it::class }, transitionSpec = { fadeIn(tween(280)) togetherWith fadeOut(tween(180)) },
             label = "screen") { screen ->
         when (screen) {
-            Screen.Home -> HomeScreen(s, onConnect = { vm.connect(sender) }, onAttest = vm::openMission,
+            Screen.Home -> HomeScreen(s, onConnect = { vm.connect(sender) }, onOpen = vm::openMission,
                 onDisconnect = vm::disconnect, onRetry = { vm.refresh() })
             Screen.Mission -> MissionScreen(s, onBack = vm::home, onStart = { vm.startMission(sender) })
             is Screen.Countdown -> CountdownScreen(screen.seconds)

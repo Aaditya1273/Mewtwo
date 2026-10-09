@@ -40,7 +40,8 @@ flowchart LR
 | `backend/tests/` | Critical-path tests + `sim.py` reference client |
 | `programs/presence/` | Anchor 1.2 program: `initialize_config`, `record_attestation` |
 | `tests/program/` | Program tests (anchor-client against a local validator) |
-| `scripts/` | `toolchain.env`, `dev_stack.sh`, `e2e_localnet.sh` |
+| `sdk/verify-presence/` | `verifyPresence()`: TypeScript reader/verifier for on-chain attestations |
+| `scripts/` | `toolchain.env`, `dev_stack.sh`, `e2e_localnet.sh`, `devnet_setup.sh`, `fund_pool.sh`, `device_e2e.py` |
 
 ## Android modules (`app/src/main/java/com/presence`)
 
@@ -61,13 +62,38 @@ flowchart LR
 | `evidence.py` | Chain/root definitions |
 | `identity.py` | SIWS message, ed25519 wallet check, P-256 ephemeral check, SGT verifiers |
 | `reputation.py` | Streak, league, explicit counters |
-| `settlement.py` | `record_attestation` instruction builder + `SolanaAttestor` |
+| `anomaly.py` | Automation heuristics over presence-check answer times (statistics, not ML) |
+| `mission_generator.py` | Plain-language → draft mission policy (rules by default, optional LLM), validated by `build_policy` |
+| `settlement.py` | `record_attestation` + pool `TransferChecked` in one transaction; on-chain deposit verification |
 | `store.py` | SQLite schema (durable nonce/claim state) |
 | `errors.py` | Every failure reason |
 | `app.py` | HTTP routes only |
 
+## SKR and sponsor pools
+
+```mermaid
+flowchart LR
+    S[Sponsor: NGO / logistics] -- transfers SKR --> P[(ATTEST pool account)]
+    S -- POST /sponsor/deposit tx --> A[ATTEST]
+    A -- reads tx from chain, credits mission pool --> A
+    W[Seeker user] -- verified P2 run --> A
+    A -- one tx: record_attestation + TransferChecked --> C[(Solana)]
+    C --> W
+```
+
+- **Outcomes, not installs.** Sponsors pay per verified, attested action. The unit is "cost per verified action".
+- **Transfer, not mint.** SKR (`SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3`, classic SPL Token, 6 decimals) has its
+  own mint authority, so rewards move out of a sponsor-funded pool. On devnet the same flow runs on an SKR_TEST
+  mint, and receipts label it `SKR-TEST`.
+- **Atomic.** The attestation and the reward transfer are one transaction. The `(profile, mission, day, seq)` PDA
+  can be created once, so a claim can't be paid twice and a payment can't land without its attestation.
+- **Budgeted.** A run reserves its reward from the mission's deposited balance. If the pool is empty, the run is
+  still attested and the receipt says `UNFUNDED`.
+- **Next (planned):** Guardians staking SKR to co-sign attestations ([trust-model.md](trust-model.md)).
+
 ## Status
 
-- **Implemented:** everything above; P1 + P2 assurance; localnet settlement.
-- **Planned:** devnet deployment of the program; developer SDK (`sdk/` does not exist yet); P3 witness flow.
+- **Implemented:** everything above; P1 + P2 assurance; SKR-style pool rewards; automation heuristics; mission
+  drafting; `verifyPresence()` SDK; program deployed on devnet.
+- **Planned:** Guardian quorum attestors; place binding (site codes); temperature-logger checkpoint field; P3 witnesses.
 - **Experimental:** none shipped.

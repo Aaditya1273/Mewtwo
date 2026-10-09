@@ -1,6 +1,7 @@
 """A reference client doing exactly what the Android app does, for tests and local demos."""
 
 import base64
+import random
 
 import base58
 from cryptography.hazmat.primitives import hashes, serialization
@@ -42,12 +43,15 @@ class SimSession:
         self.head = evidence.genesis(session_id, nonce)
         self.index = 0
 
-    def next_checkpoint(self, t_ms: int, interactions: int = 2, foreground: bool = True) -> dict:
-        cp = CheckpointData(self.index, t_ms, (self.index + 1) * 10_000, foreground, interactions)
+    def next_checkpoint(self, t_ms: int, interactions: int = 2, foreground: bool = True,
+                        response_ms: int | None = None) -> dict:
+        # Human-like by default: answers to an unpredictable prompt take ~0.4–1.8 s and vary.
+        rt = response_ms if response_ms is not None else (random.randint(400, 1800) if interactions else -1)
+        cp = CheckpointData(self.index, t_ms, (self.index + 1) * 10_000, foreground, interactions, rt)
         self.head = evidence.checkpoint_hash(self.head, cp, self.nonce)
         self.index += 1
         return {"index": cp.index, "timestamp_ms": cp.timestamp_ms, "elapsed_ms": cp.elapsed_ms,
-                "foreground": cp.foreground, "interactions": cp.interactions,
+                "foreground": cp.foreground, "interactions": cp.interactions, "response_ms": cp.response_ms,
                 "hash": self.head.hex(), "signature": self.device.sign_ephemeral(self.head)}
 
     def evidence(self) -> dict:
@@ -73,7 +77,7 @@ def main(base: str = "http://127.0.0.1:8787", fast: bool = False) -> None:
     mission = ok(c.get("/missions"))[0]
     s = ok(c.post("/session", json={"wallet": dev.wallet, "mission_id": mission["mission_id"],
                                     "ephemeral_pubkey": dev.ephemeral_pubkey}))
-    print(f"session {s['session_id']} mode={s['mode']}")
+    print(f"session {s['session_id']} mode={s['mode']} wallet={dev.wallet}")
     print(ok(c.post(f"/session/{s['session_id']}/authorize", json={"signature": dev.sign_wallet(s["siws_message"])})))
     sess = SimSession(dev, s["session_id"], s["nonce"])
     interval = 0.5 if fast else mission["checkpoint_interval_seconds"]

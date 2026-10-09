@@ -22,7 +22,16 @@ export ATTEST_DEV_MODE=true SOLANA_NETWORK=localnet SOLANA_RPC_URL=http://127.0.
        PROGRAM_ID ATTESTOR_KEYPAIR="$STATE/attestor.json" ATTEST_DB="$STATE/attest.db"
 rm -f "$STATE/attest.db"*  # the validator was reset, so reset off-chain state with it
 uv run python -m attest.bootstrap
-export REWARD_MINT="$(spl-token create-token -u localhost --decimals 0 --fee-payer "$STATE/attestor.json" \
-  --mint-authority "$(solana-keygen pubkey "$STATE/attestor.json")" --output json | python3 -c 'import json,sys; print(json.load(sys.stdin)["commandOutput"]["address"])')"
+# SKR_TEST reward mint (6 decimals, like SKR) and a sponsor wallet holding it.
+spl() { spl-token -u localhost --fee-payer "$STATE/attestor.json" --output json "$@"; }
+ATTESTOR="$(solana-keygen pubkey "$STATE/attestor.json")"
+[ -f "$STATE/sponsor.json" ] || solana-keygen new --no-bip39-passphrase -s -o "$STATE/sponsor.json" >/dev/null
+export REWARD_MINT="$(spl create-token --decimals 6 --mint-authority "$ATTESTOR" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commandOutput"]["address"])')"
+spl create-account "$REWARD_MINT" --owner "$(solana-keygen pubkey "$STATE/sponsor.json")" >/dev/null
+spl mint "$REWARD_MINT" 10000 --recipient-owner "$(solana-keygen pubkey "$STATE/sponsor.json")" --mint-authority "$STATE/attestor.json" >/dev/null
+# Once ATTEST is up, the sponsor funds both mission pools.
+( until curl -s -m1 localhost:8787/health >/dev/null; do sleep 1; done
+  "$ROOT/scripts/fund_pool.sh" localhost "$STATE/attestor.json" "$STATE/sponsor.json" "$REWARD_MINT" http://localhost:8787 \
+    asha-village-visit=50 cold-chain-cargo=100 ) &
 echo "ATTEST (DEVELOPMENT MODE) on :8787, program $PROGRAM_ID on localnet"
 uv run python -m attest.app

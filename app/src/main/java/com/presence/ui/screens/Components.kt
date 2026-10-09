@@ -114,3 +114,5 @@ fun assuranceLabel(level: String) = when (level) {
     "P4" -> "P4 HIGH ASSURANCE"
     else -> level
 }
+
+fun formatToken(v: Double): String = if (v % 1.0 == 0.0) v.toLong().toString() else "%.2f".format(v).trimEnd('0').trimEnd('.')

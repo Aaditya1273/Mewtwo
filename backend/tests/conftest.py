@@ -6,11 +6,12 @@ from attest.app import create_app
 from attest.config import BACKEND_DIR
 from attest.policy import load_missions
 from attest.service import Attest
-from attest.settlement import Settlement
+from attest.settlement import Deposit, Settlement
 
 from .sim import SimDevice, SimSession
 
-MISSION = "daily-focus"
+MISSION = "asha-village-visit"
+CARGO = "cold-chain-cargo"
 
 
 class Clock:
@@ -25,12 +26,23 @@ class Clock:
 
 
 class RecordingAttestor:
+    """Stands in for SolanaAttestor: records settlements, accepts deposits registered in `deposits`."""
+    reward_mint = "SKRtest1111111111111111111111111111111111"
+    reward_decimals = 6
+
     def __init__(self):
         self.records = []
+        self.deposits = {}
 
     def settle(self, rec):
         self.records.append(rec)
-        return Settlement(status="CONFIRMED", signature=f"sig{len(self.records)}", network="localnet")
+        return Settlement(status="CONFIRMED", signature=f"sig{len(self.records)}", network="localnet",
+                          reward_base=rec.reward_base, reward_mint=self.reward_mint if rec.reward_base else None)
+
+    def verify_deposit(self, signature):
+        if signature not in self.deposits:
+            raise RuntimeError("transaction did not move REWARD_MINT into the pool")
+        return Deposit(amount_base=self.deposits[signature], depositor="Sponsor111")
 
 
 @pytest.fixture

@@ -17,8 +17,8 @@
 
 ```text
 genesis      = SHA256("PRESENCE/genesis/v1" | session_id | nonce)
-checkpoint_i = SHA256("PRESENCE/cp/v1" | prev_hash | payload_i | nonce)
-payload_i    = "{index}|{timestamp_ms}|{elapsed_ms}|{foreground 0/1}|{interactions}"
+checkpoint_i = SHA256("PRESENCE/cp/v2" | prev_hash | payload_i | nonce)
+payload_i    = "{index}|{timestamp_ms}|{elapsed_ms}|{foreground 0/1}|{interactions}|{response_ms}"
 root         = SHA256("PRESENCE/root/v1" | last_checkpoint_hash | witness_root)
 ```
 
@@ -56,6 +56,6 @@ sequenceDiagram
 
 ## What a checkpoint contains
 
-Only counts and booleans for a 10-second window: whether the session left the foreground and how many times the user
-confirmed the pulse. No coordinates, no raw touch streams, no sensors, no location.
+Only counts and booleans for a 10-second window: whether the session left the foreground, how many times the user
+answered the presence check, and how long the check was on screen before the first answer (`response_ms`, -1 if unanswered). No coordinates, no raw touch streams, no sensors, no location.
 These are **continuity and fraud signals**, not identity.

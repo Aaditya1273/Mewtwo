@@ -1,9 +1,10 @@
 [
   {
-    "mission_id": "daily-focus",
-    "name": "Daily Focus Proof",
+    "mission_id": "asha-village-visit",
+    "name": "ASHA Village Visit",
+    "description": "An attended 60-second check-in at the start of a household or village visit. The sponsor pays per verified visit, not per self-reported one.",
     "steps": [
-      "Stay in the session for 60 seconds",
+      "Open PRESENCE when the visit starts",
       "Answer the presence check in each 10-second window (6 total)",
       "Keep PRESENCE in the foreground until the final checkpoint"
     ],
@@ -14,6 +15,28 @@
     "min_interactions_per_checkpoint": 1,
     "witness_required": false,
     "max_claims_per_identity_per_day": 1,
-    "reward": { "xp": 180, "token": 10 }
+    "reward": { "xp": 180, "token": 0.5, "symbol": "SKR" },
+    "sponsor": "Example sponsor: district health NGO (illustrative)",
+    "why": "Field incentives are paid per reported activity. One Seeker, one attended check-in a day, proven on-chain, replaces a claim nobody can audit."
+  },
+  {
+    "mission_id": "cold-chain-cargo",
+    "name": "Cold-Chain Handover",
+    "description": "A driver attests an attended 60-second stop with the consignment at a handover. Up to 3 handovers a day.",
+    "steps": [
+      "Open PRESENCE at the handover point",
+      "Answer the presence check in each 10-second window (6 total)",
+      "Stay with the session until the final checkpoint"
+    ],
+    "required_assurance": "P2",
+    "duration_seconds": 60,
+    "required_checkpoints": 6,
+    "checkpoint_interval_seconds": 10,
+    "min_interactions_per_checkpoint": 1,
+    "witness_required": false,
+    "max_claims_per_identity_per_day": 3,
+    "reward": { "xp": 250, "token": 1.0, "symbol": "SKR" },
+    "sponsor": "Example sponsor: pharma logistics partner (illustrative)",
+    "why": "Unattended stops are where cold chains break. Each handover leaves a device-bound, server-timed attestation. Temperature-logger hashes are a planned checkpoint field."
   }
 ]

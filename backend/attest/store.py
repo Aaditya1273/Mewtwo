@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS checkpoints (
   elapsed_ms INTEGER NOT NULL,
   foreground INTEGER NOT NULL,
   interactions INTEGER NOT NULL,
+  response_ms INTEGER NOT NULL,
   hash BLOB NOT NULL,
   received_at REAL NOT NULL,
   PRIMARY KEY (session_id, idx)
@@ -38,9 +39,20 @@ CREATE TABLE IF NOT EXISTS claims (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id),
   identity_key TEXT NOT NULL,
   mission_id TEXT NOT NULL,
-  day INTEGER NOT NULL
+  day INTEGER NOT NULL,
+  seq INTEGER NOT NULL,          -- claim index today for this mission; part of the on-chain PDA seeds
+  reward_base INTEGER NOT NULL,  -- reward reserved from the sponsor pool, in mint base units
+  UNIQUE (identity_key, mission_id, day, seq)
 );
 CREATE INDEX IF NOT EXISTS claims_by_identity_day ON claims(identity_key, mission_id, day);
+-- Sponsor deposits into the attestor's reward pool, verified on-chain. One row per transaction.
+CREATE TABLE IF NOT EXISTS sponsor_deposits (
+  signature TEXT PRIMARY KEY,
+  mission_id TEXT NOT NULL,
+  amount_base INTEGER NOT NULL,
+  depositor TEXT,
+  created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS profiles (
   wallet TEXT PRIMARY KEY,
   xp INTEGER NOT NULL DEFAULT 0,

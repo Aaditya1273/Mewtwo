@@ -38,7 +38,7 @@ pub struct PresenceProfile {
     pub bump: u8,
 }
 
-/// One per profile per UTC day. PDA uniqueness makes a second settlement for the same day fail.
+/// One per (profile, mission, UTC day, claim seq). PDA uniqueness makes a second settlement of the same claim fail.
 #[account]
 #[derive(InitSpace)]
 pub struct DailyAttestation {

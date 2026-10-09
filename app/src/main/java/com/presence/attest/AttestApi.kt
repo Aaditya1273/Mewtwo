@@ -25,19 +25,23 @@ class AttestException(val reason: String, val detail: String = "") : Exception("
 
 @Serializable data class Health(val mode: String, val network: String, val settlement: String)
 
-@Serializable data class Reward(val xp: Int, val token: Int = 0)
+@Serializable data class Reward(val xp: Int, val token: Double = 0.0, val symbol: String = "SKR", val funding: String? = null)
 
 @Serializable
 data class MissionPolicy(
     @SerialName("mission_id") val missionId: String,
     val name: String,
+    val description: String = "",
     val steps: List<String>,
     @SerialName("required_assurance") val requiredAssurance: String,
     @SerialName("duration_seconds") val durationSeconds: Int,
     @SerialName("required_checkpoints") val requiredCheckpoints: Int,
     @SerialName("checkpoint_interval_seconds") val checkpointIntervalSeconds: Int,
     @SerialName("min_interactions_per_checkpoint") val minInteractionsPerCheckpoint: Int,
+    @SerialName("max_claims_per_identity_per_day") val maxClaimsPerDay: Int = 1,
     val reward: Reward,
+    val sponsor: String = "",
+    val why: String = "",
 )
 
 @Serializable
@@ -61,6 +65,7 @@ data class Profile(
     @SerialName("verified_count") val verifiedCount: Int,
     val reputation: Int,
     @SerialName("proved_today") val provedToday: Boolean,
+    @SerialName("claims_today") val claimsToday: Map<String, Int> = emptyMap(),
 )
 
 @Serializable
@@ -70,7 +75,8 @@ data class Settlement(
     val network: String? = null,
     val detail: String? = null,
     @SerialName("explorer_url") val explorerUrl: String? = null,
-    @SerialName("reward_tokens") val rewardTokens: Int = 0,
+    @SerialName("reward_token") val rewardToken: Double = 0.0,
+    @SerialName("reward_symbol") val rewardSymbol: String = "SKR",
     @SerialName("reward_mint") val rewardMint: String? = null,
 )
 
@@ -167,6 +173,7 @@ data class CheckpointBody(
     @SerialName("elapsed_ms") val elapsedMs: Long,
     val foreground: Boolean,
     val interactions: Int,
+    @SerialName("response_ms") val responseMs: Long,
     val hash: String,
     val signature: String,
 )

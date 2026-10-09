@@ -28,18 +28,21 @@ fn attestation_lifecycle() {
     let owner = Keypair::new().pubkey();
     let profile = pda(&[PROFILE_SEED, owner.as_ref()]);
     let day = today();
-    let record = |signer: &Keypair, day: i64, assurance: u8| {
+    let mission = [7u8; 32];
+    let att_pda = |day: i64, seq: u8| pda(&[ATTESTATION_SEED, profile.as_ref(), &mission, &day.to_le_bytes(), &[seq]]);
+    let record_seq = |signer: &Keypair, day: i64, assurance: u8, seq: u8| {
         let req = program.request()
             .accounts(presence::accounts::RecordAttestation {
                 config, attestor: signer.pubkey(), owner, profile,
-                attestation: pda(&[ATTESTATION_SEED, profile.as_ref(), &day.to_le_bytes()]),
+                attestation: att_pda(day, seq),
                 system_program: solana_sdk_ids::system_program::id() })
             .args(presence::instruction::RecordAttestation {
-                day, mission_id: [7; 32], evidence_root: [9; 32],
-                assurance_level: assurance, sgt_mint: Pubkey::default() });
+                day, mission_id: mission, evidence_root: [9; 32],
+                assurance_level: assurance, sgt_mint: Pubkey::default(), seq });
         // The client payer signs automatically; adding it again is a TooManySigners error.
         if signer.pubkey() == payer.pubkey() { req.send() } else { req.signer(signer).send() }
     };
+    let record = |signer: &Keypair, day: i64, assurance: u8| record_seq(signer, day, assurance, 0);
 
     // Rejections: wrong signer, bad assurance, backdated day.
     let impostor = Keypair::new();
@@ -59,12 +62,16 @@ fn attestation_lifecycle() {
     assert_eq!(p.reputation, 4);
     assert_eq!(p.level, 2);
 
-    let a: DailyAttestation =
-        program.account(pda(&[ATTESTATION_SEED, profile.as_ref(), &day.to_le_bytes()])).unwrap();
+    let a: DailyAttestation = program.account(att_pda(day, 0)).unwrap();
     assert_eq!(a.evidence_root, [9; 32]);
     assert_eq!(a.assurance_level, 2);
     assert_eq!(a.attestor, payer.pubkey());
 
-    // Double settlement: the same profile+day PDA cannot be created twice.
-    assert!(record(&payer, day, 2).is_err(), "second attestation for the same day must fail");
+    // Double settlement: the same (profile, mission, day, seq) PDA cannot be created twice.
+    assert!(record(&payer, day, 2).is_err(), "second attestation of the same claim must fail");
+
+    // A second claim slot on the same day (multi-claim missions) lands, without inflating the streak.
+    record_seq(&payer, day, 2, 1).expect("second claim slot");
+    let p: PresenceProfile = program.account(profile).unwrap();
+    assert_eq!((p.stats.attestations, p.stats.current_streak), (3, 2));
 }

@@ -25,6 +25,7 @@ class Settings:
     program_id: str | None
     attestor_keypair: str | None
     reward_mint: str | None
+    reward_decimals: int
 
     @property
     def chain_id(self) -> str:
@@ -48,4 +49,5 @@ class Settings:
             program_id=os.environ.get("PROGRAM_ID") or None,
             attestor_keypair=os.environ.get("ATTESTOR_KEYPAIR") or None,
             reward_mint=os.environ.get("REWARD_MINT") or None,
+            reward_decimals=int(os.environ.get("REWARD_DECIMALS", "6")),
         )

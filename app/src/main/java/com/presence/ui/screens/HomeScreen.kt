@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
+import com.presence.attest.MissionPolicy
 import com.presence.attest.Profile
 import com.presence.session.UiState
 import com.presence.ui.theme.Ink
@@ -32,7 +34,7 @@ private fun leagueColor(league: String?) = when (league) {
 }
 
 @Composable
-fun HomeScreen(s: UiState, onConnect: () -> Unit, onAttest: () -> Unit, onDisconnect: () -> Unit, onRetry: () -> Unit) =
+fun HomeScreen(s: UiState, onConnect: () -> Unit, onOpen: (MissionPolicy) -> Unit, onDisconnect: () -> Unit, onRetry: () -> Unit) =
     Page {
         Header(s.health?.mode)
         Gap(28)
@@ -50,24 +52,19 @@ fun HomeScreen(s: UiState, onConnect: () -> Unit, onAttest: () -> Unit, onDiscon
             Gap(12)
         }
 
-        s.mission?.let { m ->
-            Eyebrow("Today's proof")
-            Gap(6)
-            Text(m.name, style = MaterialTheme.typography.headlineMedium, color = Ink.Text)
-            Gap(14)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Stat("Assurance", assuranceLabel(m.requiredAssurance))
-                Stat("Reward", "+${m.reward.xp} XP")
-                Stat("Duration", "${m.durationSeconds}s")
+        if (s.missions.isNotEmpty()) {
+            Eyebrow("Today's proofs")
+            Gap(10)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                s.missions.forEach { m ->
+                    val used = s.profile?.claimsToday?.get(m.missionId) ?: 0
+                    MissionCard(m, used, enabled = s.wallet != null && !s.busy && used < m.maxClaimsPerDay) { onOpen(m) }
+                }
             }
-            Gap(20)
+            Gap(16)
         }
 
-        when {
-            s.wallet == null -> PrimaryButton("Connect wallet", enabled = !s.busy, onClick = onConnect)
-            s.profile?.provedToday == true -> PrimaryButton("Proved today ✓", enabled = false) {}
-            else -> PrimaryButton("Attest now", enabled = s.mission != null && !s.busy, onClick = onAttest)
-        }
+        if (s.wallet == null) PrimaryButton("Connect wallet", enabled = !s.busy, onClick = onConnect)
         s.wallet?.let {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDisconnect) {
@@ -76,6 +73,35 @@ fun HomeScreen(s: UiState, onConnect: () -> Unit, onAttest: () -> Unit, onDiscon
             }
         }
     }
+
+@Composable
+private fun MissionCard(m: MissionPolicy, usedToday: Int, enabled: Boolean, onClick: () -> Unit) {
+    val done = usedToday >= m.maxClaimsPerDay
+    Row(
+        Modifier.fillMaxWidth()
+            .border(1.dp, if (done) Ink.Verified.copy(alpha = 0.5f) else Ink.Line, RoundedCornerShape(16.dp))
+            .background(Ink.Surface, RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(m.name, style = MaterialTheme.typography.titleMedium, color = Ink.Text)
+            Gap(2)
+            val token = if (m.reward.token > 0) " · ${formatToken(m.reward.token)} ${m.reward.symbol}" else ""
+            Text("${assuranceLabel(m.requiredAssurance)} · ${m.durationSeconds}s · +${m.reward.xp} XP$token",
+                style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+        }
+        Text(
+            when {
+                done -> "✓ ${usedToday}/${m.maxClaimsPerDay}"
+                m.maxClaimsPerDay > 1 -> "${usedToday}/${m.maxClaimsPerDay} →"
+                else -> "Start →"
+            },
+            style = MaterialTheme.typography.labelLarge, color = if (done) Ink.Verified else Ink.Text,
+        )
+    }
+}
 
 /** Passport-style card: who you are in PRESENCE, from server state only. */
 @Composable

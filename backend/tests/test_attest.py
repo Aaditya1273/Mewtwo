@@ -24,7 +24,8 @@ def test_happy_path_produces_receipt_profile_and_settlement(api, clock, device, 
     assert rc["duration_seconds"] == 60.0
     assert rc["checks"]["seeker_eligibility"] == "DEV_BYPASS"  # never claims SGT in dev mode
     assert rc["mode"] == "development"
-    assert rc["reward"] == {"xp": 180} and rc["streak"] == 1
+    assert rc["reward"] == {"xp": 180, "token": 0.0, "symbol": "SKR-TEST", "funding": "UNFUNDED"}  # no sponsor deposit yet
+    assert rc["streak"] == 1
     assert rc["settlement"]["status"] == "CONFIRMED"
     assert attestor.records[0].evidence_root.hex() == rc["evidence_root"]
     assert api.get(f"/session/{sess.session_id}/receipt").json()["state"] == "SETTLED"
@@ -157,7 +158,7 @@ def test_siws_message_binds_nonce_and_ephemeral_key(api, device):
 
 def test_evidence_chain_golden_vector():
     """Shared with Android EvidenceChainTest.kt: both implementations must produce these bytes."""
-    cps = [CheckpointData(i, 1_700_000_000_000 + i * 10_000, (i + 1) * 10_000, True, 2) for i in range(6)]
+    cps = [CheckpointData(i, 1_700_000_000_000 + i * 10_000, (i + 1) * 10_000, True, 2, 700 + i * 100) for i in range(6)]
     hashes = evidence.chain("session-1", "nonce-1", cps)
     assert evidence.genesis("session-1", "nonce-1").hex() == GOLDEN_GENESIS
     assert hashes[0].hex() == GOLDEN_CP0
@@ -165,5 +166,5 @@ def test_evidence_chain_golden_vector():
 
 
 GOLDEN_GENESIS = "c52244702ffcfcac1b4198db2c0c1f086640a36441c9bd265217dec3fae9a5ef"
-GOLDEN_CP0 = "fa53672bbd67a8cee32e5769089f97240abf6f0b1fd45597d24c02b1bb65a733"
-GOLDEN_ROOT = "adbe64d6fa439e4d9853f97738b9266e1fbaa6ff6d13b67f798d4a8ce0ad6385"
+GOLDEN_CP0 = "296120d3f97cbd8a1a082fc4990f18dcb1e8068d36fdea928169286c527ee07e"
+GOLDEN_ROOT = "4cf4a2f0811cc0fcad119242576453a92ae0572475e2e5573741be4f1b1ef1bc"

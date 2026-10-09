@@ -37,7 +37,11 @@ pub mod presence {
         evidence_root: [u8; 32],
         assurance_level: u8,
         sgt_mint: Pubkey,
+        seq: u8,
     ) -> Result<()> {
+        // `seq` is the claim index for this mission today (0 for one-per-day missions).
+        // Each (profile, mission, day, seq) can be attested exactly once.
+        let _ = seq;
         require!((1..=4).contains(&assurance_level), PresenceError::InvalidAssurance);
         let now = Clock::get()?.unix_timestamp;
         let today = now.div_euclid(SECONDS_PER_DAY);
@@ -56,7 +60,11 @@ pub mod presence {
         }
 
         let stats = &mut profile.stats;
-        stats.current_streak = if stats.last_day == day - 1 { stats.current_streak + 1 } else { 1 };
+        stats.current_streak = match day - stats.last_day {
+            0 => stats.current_streak, // another claim on a day already counted
+            1 => stats.current_streak + 1,
+            _ => 1,
+        };
         stats.best_streak = stats.best_streak.max(stats.current_streak);
         stats.last_day = stats.last_day.max(day);
         stats.attestations += 1;
@@ -86,7 +94,7 @@ pub struct InitializeConfig<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(day: i64)]
+#[instruction(day: i64, mission_id: [u8; 32], evidence_root: [u8; 32], assurance_level: u8, sgt_mint: Pubkey, seq: u8)]
 pub struct RecordAttestation<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump,
               has_one = attestor @ PresenceError::UnauthorizedAttestor)]
@@ -100,7 +108,7 @@ pub struct RecordAttestation<'info> {
               seeds = [PROFILE_SEED, owner.key().as_ref()], bump)]
     pub profile: Account<'info, PresenceProfile>,
     #[account(init, payer = attestor, space = 8 + DailyAttestation::INIT_SPACE,
-              seeds = [ATTESTATION_SEED, profile.key().as_ref(), &day.to_le_bytes()], bump)]
+              seeds = [ATTESTATION_SEED, profile.key().as_ref(), &mission_id, &day.to_le_bytes(), &[seq]], bump)]
     pub attestation: Account<'info, DailyAttestation>,
     pub system_program: Program<'info, System>,
 }

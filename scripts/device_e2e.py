@@ -71,11 +71,11 @@ def fresh_identity() -> None:
     adb("shell", "am", "start", "-n", "com.presence/.MainActivity")
     tap("Connect wallet")
     tap("AUTHORIZE")
-    wait_for("Attest now")
+    wait_for("Today's proofs")
 
 
-def run_mission(skip_window: int | None = None, leave_at: float | None = None) -> str:
-    tap("Attest now")
+def run_mission(skip_window: int | None = None, leave_at: float | None = None, mission: str = "ASHA Village Visit") -> str:
+    tap(mission)
     tap("For 60 seconds only")       # consent row
     tap("Start mission")
     tap("AUTHORIZE")                  # wallet signs the SIWS message
@@ -110,6 +110,13 @@ def main() -> None:
             print(run_mission())
             tap("Done")
             time.sleep(2)
+            print("home:", texts())
+        elif scenario == "cargo":      # multi-claim mission: two handovers today, each its own on-chain record
+            for _ in range(2):
+                adb("shell", "am", "start", "-n", "com.presence/.MainActivity")
+                print(run_mission(mission="Cold-Chain Handover"))
+                tap("Done")
+                time.sleep(2)
             print("home:", texts())
         elif scenario == "again":      # same wallet, same day
             adb("shell", "am", "start", "-n", "com.presence/.MainActivity")

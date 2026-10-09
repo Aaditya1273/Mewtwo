@@ -43,6 +43,11 @@ class PresenceViewModel @Inject constructor(
 
     // Evidence window counters, reset at every checkpoint. Only counts are kept, never raw input.
     @Volatile private var windowTaps = 0
+    @Volatile private var windowResponseMs = -1L
+    // Set while a session runs, so onPulse can time the answer against the window's prompt.
+    @Volatile private var sessionStart = 0L
+    @Volatile private var intervalMsRunning = 10_000L
+    @Volatile private var promptAtRunning: List<Long> = emptyList()
     @Volatile private var windowForeground = true
     @Volatile private var anyBackground = false
 
@@ -53,9 +58,12 @@ class PresenceViewModel @Inject constructor(
     fun refresh() = viewModelScope.launch {
         try {
             val health = api.health()
-            val mission = api.missions().firstOrNull()
+            val missions = api.missions()
             val profile = wallet.account?.let { api.profile(it.address) }
-            _state.update { it.copy(health = health, mission = mission, profile = profile, backendError = null) }
+            _state.update { s ->
+                val selected = missions.firstOrNull { m -> m.missionId == s.mission?.missionId } ?: missions.firstOrNull()
+                s.copy(health = health, missions = missions, mission = selected, profile = profile, backendError = null)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -78,6 +86,8 @@ class PresenceViewModel @Inject constructor(
 
     fun openMission() = _state.update { it.copy(screen = Screen.Mission) }
 
+    fun openMission(m: MissionPolicy) = _state.update { it.copy(mission = m, screen = Screen.Mission) }
+
     fun home() {
         missionJob?.cancel()
         _state.update { it.copy(screen = Screen.Home) }
@@ -88,6 +98,11 @@ class PresenceViewModel @Inject constructor(
 
     fun onPulse() {
         windowTaps++
+        if (windowResponseMs < 0 && promptAtRunning.isNotEmpty()) {
+            val elapsed = SystemClock.elapsedRealtime() - sessionStart
+            val window = (elapsed / intervalMsRunning).toInt().coerceAtMost(promptAtRunning.size - 1)
+            windowResponseMs = (elapsed - window * intervalMsRunning - promptAtRunning[window]).coerceAtLeast(0)
+        }
         _state.update { s ->
             val a = s.screen as? Screen.Active ?: return@update s
             s.copy(screen = a.copy(confirmedThisWindow = true))
@@ -183,6 +198,10 @@ class PresenceViewModel @Inject constructor(
         var done = 0
         // Each window's presence check appears at an unpredictable moment, 1.5–6 s into the window.
         val promptAt = List(policy.requiredCheckpoints) { 1500L + (Math.random() * 4500).toLong() }
+        sessionStart = start
+        intervalMsRunning = intervalMs
+        promptAtRunning = promptAt
+        windowResponseMs = -1
 
         fun publish(confirmed: Boolean) = _state.update {
             val elapsed = SystemClock.elapsedRealtime() - start
@@ -217,12 +236,14 @@ class PresenceViewModel @Inject constructor(
                     elapsedMs = SystemClock.elapsedRealtime() - start,
                     foreground = windowForeground,
                     interactions = windowTaps,
+                    responseMs = windowResponseMs,
                 )
                 windowTaps = 0
+                windowResponseMs = -1
                 windowForeground = true
                 val hash = chain.append(cp)
                 api.checkpoint(sessionId, CheckpointBody(
-                    cp.index, cp.timestampMs, cp.elapsedMs, cp.foreground, cp.interactions,
+                    cp.index, cp.timestampMs, cp.elapsedMs, cp.foreground, cp.interactions, cp.responseMs,
                     hash.toHex(), key.sign(hash)))
                 done = i + 1
                 publish(false)

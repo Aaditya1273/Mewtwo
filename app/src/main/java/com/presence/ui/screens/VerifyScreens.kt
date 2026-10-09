@@ -131,7 +131,12 @@ fun ReceiptScreen(r: Screen.Result, onDone: () -> Unit) = Page {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("+${rc.reward.xp} XP", style = MaterialTheme.typography.headlineMedium, color = Ink.Text)
-                    if (s.rewardTokens > 0) Text("+${s.rewardTokens} test tokens", style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+                    when {
+                        s.rewardToken > 0 -> Text("+${formatToken(s.rewardToken)} ${s.rewardSymbol} paid from sponsor pool",
+                            style = MaterialTheme.typography.bodyMedium, color = Ink.Verified)
+                        rc.reward.funding == "UNFUNDED" -> Text("Sponsor pool empty: no ${rc.reward.symbol} paid",
+                            style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+                    }
                     Gap(6)
                     Text("${rc.leagueBefore} #${rc.rankBefore} → ${rc.leagueAfter} #${rc.rankAfter}",
                         style = MaterialTheme.typography.titleMedium, color = Ink.Text)

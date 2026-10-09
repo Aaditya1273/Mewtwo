@@ -37,6 +37,8 @@ data class UiState(
     val wallet: WalletAccount? = null,
     val health: Health? = null,
     val backendError: String? = null,
+    val missions: List<MissionPolicy> = emptyList(),
+    /** The mission the user picked; defaults to the first one. */
     val mission: MissionPolicy? = null,
     val profile: Profile? = null,
     val busy: Boolean = false,
@@ -52,6 +54,7 @@ fun reasonMessage(reason: String): String = when (reason) {
     "SGT_NOT_ELIGIBLE" -> "No Seeker Genesis Token found in this wallet."
     "EVIDENCE_CHAIN_INVALID" -> "Session evidence was inconsistent and was rejected."
     "POLICY_NOT_SATISFIED" -> "The mission requirements were not met."
+    "AUTOMATION_DETECTED" -> "The presence checks were answered like a script, not a person."
     "ALREADY_CLAIMED" -> "This device already completed today's proof."
     "ATTESTATION_FAILED" -> "Verification succeeded but the on-chain attestation failed."
     "NETWORK_ERROR" -> "Can't reach the ATTEST server."

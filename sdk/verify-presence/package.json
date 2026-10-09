@@ -1,0 +1,9 @@
+{
+  "name": "@presence/verify-presence",
+  "version": "0.1.0",
+  "description": "Read and verify PRESENCE attestations on Solana without trusting the ATTEST server",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "test": "node --test test/*.test.ts" },
+  "dependencies": { "@solana/web3.js": "^1.98.0" }
+}
