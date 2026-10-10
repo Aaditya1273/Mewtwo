@@ -1,265 +1,142 @@
-# PRESENCE
+# CLOCK IN, built on PRESENCE
 
-**Field proof on Seeker: sponsors pay for verified outcomes, not installs.**
+**Stake SKR on your focus. Prove you kept it.**
 
-One Seeker, one attended action, a server-timed evidence chain, and an on-chain attestation that pays SKR out of a
-sponsor's pool in the same transaction. Two missions ship: an **ASHA village-visit check-in** and a
-**cold-chain handover stop**.
+Every Seeker owner knows the loop: you pick up the phone to do one thing and lose twenty minutes. CLOCK IN is a
+daily appointment with your own attention, with skin in the game:
 
-> Seeker gives you trusted device identity. ATTEST verifies the process behind your actions.
-> PRESENCE turns verified participation into reputation, access, and rewards.
-
-```text
-ACTION → EVIDENCE → TRUST → VALUE → REPUTATION
-```
+1. **Stake** a little SKR and start a focus session (2 or 25 minutes).
+2. **Put the phone down.** The screen stays on; it buzzes once per window at an unpredictable moment. Tap *I'm here*.
+3. **Finish:** your stake comes back **plus a 20% bonus**, in the same Solana transaction that records your
+   attestation. **Quit, switch apps or miss a check:** your stake goes to the pool that pays everyone who finished.
 
 <p>
-<img src="screenshots/home.png" width="19%" alt="Home: today's proof">
-<img src="screenshots/mission.png" width="19%" alt="Mission and consent">
-<img src="screenshots/active.png" width="19%" alt="Active session">
-<img src="screenshots/receipt.png" width="19%" alt="Trust Receipt">
-<img src="screenshots/rejected.png" width="19%" alt="Rejected by policy">
+<img src="screenshots/home.png" width="19%" alt="Home: passport, streak, Clock In missions with pools">
+<img src="screenshots/mission.png" width="19%" alt="Mission: stake, rules, guarantees">
+<img src="screenshots/active.png" width="19%" alt="Live session: timer and evidence chain sealing">
+<img src="screenshots/receipt.png" width="19%" alt="Trust Receipt: stake back + bonus, on-chain QR">
+<img src="screenshots/rejected.png" width="19%" alt="Rejected: stake forfeited to the pool">
 </p>
 
-*Screenshots: Android emulator, local ATTEST and validator, **development mode** (Seeker eligibility bypassed and
-labeled), rewards in SKR-TEST. The same flow runs on devnet:*
+**Demo video:** [`demo/clock-in-demo-2x.mp4`](demo/clock-in-demo-2x.mp4) (3 min at 2× speed): a staked session that
+finishes (stake back + bonus), then one that leaves the app (stake forfeited to the pool). Recorded on the emulator,
+with the app and wallet driven by `scripts/device_e2e.py`.
 
-| Devnet | Address |
+*Screenshots: Android emulator with Solana Mobile's test wallet, local validator, **development mode** (Seeker
+eligibility bypassed and labeled). Rewards are SKR-TEST, a valueless test mint with SKR's 6 decimals.*
+
+## Why nobody has done this before
+
+Focus apps run on a **local timer**. Anyone can fake one, so nobody can put money on them. Commitment contracts work
+(in a randomized trial, smokers offered a deposit contract were 3 points more likely to quit, effects lasting a year,
+[Giné, Karlan & Zinman](https://poverty-action.org/publication/put-your-money-where-your-butt)), but only when
+someone can check the outcome.
+
+**PRESENCE is that check, with no referee:**
+
+| What a cheater would try | Why it fails |
 |---|---|
-| Program | `CFZsFPtvwo5KDenV3qgorroaRmT7NuYsfPnd4avFS2cT` |
-| Attestor | `BD7uCuSscR6kLH7Bn1f7y59zWUTsuHvjBVE8ePGdneRP` |
-| SKR_TEST mint (6 decimals) | `GGqPuCZvbfmVuaUDU5AHqSxrMSbM9L3qJMP1Q7p7myRU` |
-| Example attestation + 0.5 SKR-TEST payout | [8p44…myer](https://explorer.solana.com/tx/8p44JowS4qyR3TJhfcp4aVE1NAaawrVThD8SKxDcTifEsZyaThgEJGC9wB98cN1UDokHbTtkhWZiSGcXzdGmyer?cluster=devnet) |
+| Fake the timer / fast-forward | The **server** times the session from its own clock. Checkpoints that arrive early are rejected. |
+| Leave the app and come back | Every checkpoint records whether the session stayed in the foreground. One miss forfeits the stake. |
+| Script the taps | Checks appear at random moments; answer times that are instant or metronome-steady are flagged `AUTOMATION_DETECTED`. |
+| Replay or forge evidence | Checkpoints form a hash chain signed by a per-session Android Keystore key bound into the wallet's sign-in. |
+| Farm the bonus pool with many wallets | One claim per **Seeker Genesis Token** per mission per day: a device, not a wallet. |
+| Claim the payout twice | Payout and attestation are one transaction on a PDA that can be created once. |
 
----
+This builds on a security idea formalized in 2026: real-time human attention is a scarce resource that can't be
+parallelized, so time-bound, identity-bound challenges make sustaining *s* fake identities cost grow linearly with *s*
+([Human Challenge Oracle, arXiv 2601.03923](https://arxiv.org/abs/2601.03923)). Seeker adds what that paper's
+browser setting lacks: a hardware-bound identity per device.
 
-## 1. Problem
+## Why it fits CLOCK IN
 
-Apps can verify that a key signed something. They cannot verify that the **intended process** happened: that a user
-actually stayed and participated, that the claim isn't a replay, or that one device isn't farming the same action.
-Sponsors end up paying for installs and signatures rather than outcomes.
+- **Stickiness:** a daily appointment, streak, league and money at stake. Behavioural research suggests appointments
+  beat open-ended commitments ([arXiv 2110.06876](https://arxiv.org/abs/2110.06876)), so each session is a scheduled
+  clock-in rather than a vague goal.
+- **Seeker-native:** the Seeker Genesis Token makes the pool Sybil-resistant per device, and Mobile Wallet Adapter
+  signs the sign-in and the stake in one prompt.
+- **SKR as the core mechanic, not decoration:** you stake SKR, finishers earn SKR, quitters fund the pool, and
+  sponsors can top it up.
 
-The same gap costs real money off-chain. Field programmes pay health workers per reported visit, and logistics
-partners pay per completed handover. Today those reports can't be audited: anyone can claim a visit, and nothing
-shows whether someone stayed with a temperature-sensitive consignment.
-
-## 2. Thesis
-
-A signature proves authorization. A **bounded, server-timed, signed evidence chain**, tied to a device identity
-(Seeker Genesis Token), can prove *with a stated assurance level* that a defined process took place. That is a primitive
-other apps can rely on.
-
-## 3. Solution
-
-One meaningful mobile action, attested end-to-end:
+## How SKR moves
 
 ```mermaid
 flowchart LR
-    A[Seeker wallet<br/>MWA] --> B[SIWS signature<br/>over server nonce]
-    B --> C[60 s bounded process<br/>6 signed checkpoints]
-    C --> D[Evidence root]
-    D --> E[ATTEST verifies<br/>chain · timing · policy · replay]
-    E --> F[DailyAttestation<br/>on Solana]
-    F --> G[Streak · League · XP]
-    G --> H[Trust Receipt]
+    U[You] -- stake 1 SKR, signed in MWA --> P[(Pool account)]
+    S[Sponsor] -- optional top-up --> P
+    U -- 2 min focus, 4 presence checks --> A[ATTEST engine]
+    A -- verified: one tx --> C[(Solana)]
+    C -- DailyAttestation + stake back + 20% bonus --> U
+    Q[Quitter] -. forfeited stake .-> P
 ```
 
-## 4. Trust model
+- **Stake.** ATTEST builds the transfer; the wallet signs it together with the sign-in message; ATTEST submits it
+  only if it is byte-for-byte the transaction it issued.
+- **Pay.** On success, `record_attestation` and a `TransferChecked` of *stake + bonus* from the pool go in **one
+  transaction**. The bonus is capped by what the pool holds.
+- **Forfeit.** Rejected sessions, and sessions abandoned until they expire, leave their stake in the pool.
+- **Real SKR** is `SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3` (classic SPL Token, 6 decimals). We can't mint it,
+  which is why everything is transfer-based. Pointing `REWARD_MINT` at it is the mainnet switch.
 
-**The client collects evidence. ATTEST decides. The chain anchors.** The app never sends `verified`, `reward` or
-`assurance`. ATTEST owns nonces, the server clock, policy evaluation, claim state and rewards, and only its attestor key
-can write on-chain. See [docs/trust-model.md](docs/trust-model.md).
+**Devnet (live):**
 
-## 5. Assurance levels
+| | |
+|---|---|
+| Program | `CFZsFPtvwo5KDenV3qgorroaRmT7NuYsfPnd4avFS2cT` |
+| SKR_TEST mint (6 decimals) | `GGqPuCZvbfmVuaUDU5AHqSxrMSbM9L3qJMP1Q7p7myRU` |
+| Example: 2-min session attested, 1 SKR-TEST stake + 0.2 bonus paid in one tx | [3nPy…FdA](https://explorer.solana.com/tx/3nPyCXQkQ8AFKm6pAXSJYpTpLeAHwj9J98xfZ5sKBEJ4Vmpo5q8bvSnCqyTvEXB3yna5Ua9VLXRK7FXtnUxezFdA?cluster=devnet) |
 
-| Level | Meaning | Status |
-|---|---|---|
-| **P1 VERIFIED** | Wallet signed a fresh server nonce + wallet holds a Seeker Genesis Token | ✅ implemented (SGT bypassed and labeled in dev mode) |
-| **P2 PROCESS** | P1 + continuous, server-timed, ephemeral-key-signed evidence satisfying the mission policy | ✅ implemented |
-| **P3 WITNESSED** | P2 + BLE co-presence witnesses under a quorum | ❌ not implemented (policies requiring it are refused) |
-| **P4 HIGH ASSURANCE** | Hardware-backed device attestation | ❌ not implemented |
+## The engine: PRESENCE
 
-PRESENCE is not proof of personhood and does not claim perfect bot or Sybil resistance.
+CLOCK IN is the first product on **PRESENCE**, a general engine for "prove a person actually did this process":
 
-## 6. Architecture
+- **Client collects, ATTEST decides, chain anchors.** The app never sends `verified`, `reward` or `assurance`.
+- **Evidence chain.** `checkpoint_i = SHA256("PRESENCE/cp/v2" | prev | "{i}|{ts}|{elapsed}|{fg}|{taps}|{response_ms}" | nonce)`,
+  identical in Kotlin and Python (shared golden vectors).
+- **Privacy.** Per window: a foreground flag, a tap count and one answer time. No location, sensors, contacts or
+  background tracking. Only a 32-byte root goes on-chain.
+- **Assurance levels.** P1 = wallet sign-in + Seeker Genesis Token, P2 = P1 + process evidence. P3 (witnesses) and
+  P4 (hardware attestation) are designed, not built.
+- **`verifyPresence()` SDK.** Any app can check an attestation on Solana without trusting our server
+  ([docs/integration.md](docs/integration.md)).
 
-```text
-app/                 Android: Kotlin, Compose, Hilt, Mobile Wallet Adapter (from the Solana Mobile scaffold)
-backend/attest/      ATTEST engine: FastAPI, SQLite, cryptography, solders
-backend/missions.json  Mission policies
-programs/presence/   Anchor 1.2 program: Config, PresenceProfile, DailyAttestation
-tests/program/       Program tests (local validator)
-scripts/             toolchain.env, dev_stack.sh, e2e_localnet.sh
-docs/                architecture, trust model, evidence model, security, mission policy, integration
-```
+The same engine extends to verified field work (health-worker visits, cold-chain handovers). That's the roadmap,
+not this submission: those users don't carry Seekers yet, and those claims need place-binding we haven't built.
 
-Details: [docs/architecture.md](docs/architecture.md).
+Docs: [architecture](docs/architecture.md) · [trust model](docs/trust-model.md) ·
+[evidence](docs/evidence-model.md) · [security](docs/security.md) · [missions](docs/mission-policy.md) ·
+[integration](docs/integration.md) · [demo script](docs/demo.md)
 
-## 7. Mission policy
+## Honest limitations
 
-Typed, data-defined, evaluated in exactly one function (`backend/attest/policy.py::evaluate`):
+- **Not tested on a real Seeker.** Seeker Genesis Token verification is implemented and unit-tested; every run so far
+  used development mode, which is labeled on every screen and receipt.
+- **This phone, not you.** It proves *this* device stayed on the session with a person answering. It can't stop you
+  using a second phone.
+- **Heuristics, not proof.** Automation detection catches naive scripts; a script with human-like random delays can pass.
+- **Single operator.** One attestor key and one ATTEST server. A Guardian quorum staking SKR is designed, not built
+  ([trust-model.md](docs/trust-model.md)).
+- **Test tokens only.** Devnet and localnet use SKR-TEST and a dev-only faucet, which the server refuses on mainnet.
 
-| Mission | Attests | Claims/day | Reward |
-|---|---|---|---|
-| `asha-village-visit` | attended 60 s check-in at a visit | 1 per device | 180 XP + 0.5 SKR |
-| `cold-chain-cargo` | attended 60 s stop at a handover | 3 per device | 250 XP + 1 SKR |
-
-Sponsors in the app are illustrative. **Neither mission proves location:** no GPS is collected. Place binding and
-temperature-logger hashes are planned. `POST /missions/generate` drafts new policies from plain language (rules by
-default, optional LLM), always validated by the same `build_policy` and returned for review.
-
-See [docs/mission-policy.md](docs/mission-policy.md).
-
-## 8. Evidence model
-
-```text
-genesis      = SHA256("PRESENCE/genesis/v1" | session_id | nonce)
-checkpoint_i = SHA256("PRESENCE/cp/v1" | prev | "{i}|{ts}|{elapsed}|{fg}|{taps}" | nonce)
-root         = SHA256("PRESENCE/root/v1" | last | witness_root)
-```
-
-Each checkpoint hash and the root are signed by a per-session **Android Keystore P-256 key**, whose fingerprint is
-inside the SIWS message the wallet signed. Python and Kotlin implementations share golden test vectors.
-See [docs/evidence-model.md](docs/evidence-model.md).
-
-## 9. Security
-
-Replay (single-use nonce + state machine), double settlement (claim registry + one PDA per profile per day), client
-tampering (server recomputes everything, server clock), session theft (ephemeral key), device farming (one claim per
-SGT per day). The limitations are stated plainly in [docs/security.md](docs/security.md).
-
-## 10. Privacy
-
-A checkpoint contains only a foreground flag and a tap **count** for a 10-second window: no location, sensors, raw
-touches or background tracking. The app asks for explicit consent before each session. Only a 32-byte evidence root
-goes on-chain.
-
-## 11. On-chain model
-
-| Account | Seeds | Contents |
-|---|---|---|
-| `Config` | `["config"]` | `admin`, `attestor` |
-| `PresenceProfile` | `["profile", wallet]` | `owner`, `sgt_mint`, `level`, `reputation`, `stats{attestations, current_streak, best_streak, last_day}` |
-| `DailyAttestation` | `["attestation", profile, sha256(mission), day_le, seq]` | `day`, `mission_id = sha256(id)`, `evidence_root`, `assurance_level`, `attestor`, `recorded_at` |
-
-`record_attestation` requires the configured attestor signature and a day of today or yesterday (UTC). The attestor
-pays rent, so users need no SOL.
-
-**SKR settlement.** Rewards are **transferred** out of a sponsor-funded pool, never minted. Real SKR
-(`SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3`, 6 decimals) has its own mint authority.
-- **Funding:** sponsors move SKR into the pool and register the transaction with `POST /sponsor/deposit`; ATTEST reads it from chain before crediting the mission.
-- **Payout:** a verified run reserves its reward from that balance, and the reward `TransferChecked` rides in the **same transaction** as `record_attestation`.
-- **Double-pay guard:** a claim can't be paid twice, because its PDA can be created once.
-- **Devnet:** the flow uses an SKR_TEST mint, and receipts say `SKR-TEST`.
-
-[docs/architecture.md](docs/architecture.md#skr-and-sponsor-pools)
-
-## 12. Android architecture
-
-`PresenceViewModel` orchestrates the session. Composables only render `UiState`. `WalletRepository` wraps MWA
-(the scaffold's connect + `signMessagesDetached` flow), `EvidenceChain` and `EphemeralKey` build and sign evidence,
-`AttestApi` is a typed client. The scaffold's demo code (balance, airdrop, memo transactions) was removed.
-
-## 13. ATTEST engine
-
-```text
-CREATED ─authorize→ ACTIVE ─evidence→ SUBMITTED ─verify→ VERIFIED ─settle→ SETTLED
-                                                    └──────→ REJECTED
-```
-
-Explicit failure reasons: `SESSION_EXPIRED`, `INVALID_NONCE`, `NONCE_REPLAY`, `INVALID_SIGNATURE`,
-`INVALID_IDENTITY`, `SGT_NOT_ELIGIBLE`, `EVIDENCE_CHAIN_INVALID`, `POLICY_NOT_SATISFIED`, `ALREADY_CLAIMED`,
-`ATTESTATION_FAILED`, `NETWORK_ERROR` (client adds `WALLET_NOT_CONNECTED`, `WALLET_NOT_FOUND`, `WALLET_REJECTED`).
-
-## 14. Trust Receipt
-
-Built only from the server's verification output: assurance, server-measured duration, checkpoint count, evidence
-root, each check's status (`PASSED` / `DEV_BYPASS`), XP, league and rank before → after, streak, and settlement
-(`CONFIRMED` + tx / `NOT_CONFIGURED` / `FAILED`), plus the test-token amount when one was minted. "View evidence" shows the root, session, checks, every checkpoint
-hash and the transaction.
-
-**Reputation is explicit counters.** `reputation` = sum of attested assurance levels (same rule on-chain and
-off-chain). League = XP thresholds (BRONZE 0, SILVER 500, GOLD 1500, ELITE 5000). Rank = position among real
-profiles in the ATTEST database. There are no seeded or fake users.
-
-## 15. Developer integration
-
-`sdk/verify-presence` gives other apps the attestation without trusting our server:
-
-```ts
-const r = await verifyPresence(connection, wallet, { mission: "asha-village-visit" });
-if (r.verified && r.assuranceLevel >= 2) payWorker();
-```
-
-It's tested against a real attestation on localnet and checked against devnet. See [docs/integration.md](docs/integration.md).
-
-## 16. Roadmap
-
-```mermaid
-timeline
-    Built : SIWS + SGT : P2 evidence chain : SKR pool payouts : automation heuristics : verifyPresence() SDK : devnet
-    Next : Seeker device test : site-code place binding : Play Integrity / key attestation
-    Later : Guardian quorum attestors staking SKR : temperature-logger checkpoints : P3 witnesses
-```
-
-## 17. Limitations
-
-- **Not tested on a Seeker device.** Production SGT verification is implemented and unit-tested against
-  the documented Token-2022 extension layout, but not exercised against a real SGT.
-- Development mode bypasses SGT and is labeled everywhere it applies.
-- Mainnet is not used; devnet rewards are SKR-TEST (no value). Mainnet needs a sponsor-funded SKR pool.
-- Missions don't prove location. Automation heuristics flag naive scripts; scripts with human-like delays can pass (see docs/security.md).
-- One attestor key (a file) and one ATTEST process with SQLite. The Guardian quorum is designed, not built ([trust-model.md](docs/trust-model.md)).
-- The mission generator's LLM path is untested (no API key); the rules path is tested.
-- P3/P4, BLE, ORE, curator network: not implemented.
-
-## 18. Setup
-
-Toolchains used (user-local, no system changes): JDK 17, Android SDK 35, Python ≥ 3.12 with `uv`,
-Solana CLI (Agave) 4.3, Anchor 1.2.1, and an isolated rustup for `cargo build-sbf`.
+## Run it
 
 ```bash
-. scripts/toolchain.env           # puts the toolchains above on PATH (edit paths for your machine)
-
-# Program
+. scripts/toolchain.env
 anchor build
-
-# Full local stack: validator + program + config + reward mint + ATTEST (DEVELOPMENT MODE) on :8787
-scripts/dev_stack.sh
-
-# Devnet: deploy once, then attestor key + Config + reward mint → .devnet/attest.env
-solana program deploy target/deploy/presence.so --program-id target/deploy/presence-keypair.json -u devnet
-scripts/devnet_setup.sh
-
-# Android (emulator reaches the host at 10.0.2.2)
-./gradlew :app:installDebug
-# real device / other host:
-./gradlew :app:installDebug -Ppresence.backendUrl=http://<host-ip>:8787 -Ppresence.network=devnet
+scripts/dev_stack.sh                 # validator + program + SKR_TEST pools + ATTEST (dev mode) on :8787
+./gradlew :app:installDebug          # emulator reaches the host at 10.0.2.2
 ```
 
-On an emulator, install Solana Mobile's test wallet to get a real MWA flow:
-`fakewallet-v1-debug.apk` from the [mobile-wallet-adapter releases](https://github.com/solana-mobile/mobile-wallet-adapter/releases).
+Install Solana Mobile's `fakewallet-v1-debug.apk`
+([MWA releases](https://github.com/solana-mobile/mobile-wallet-adapter/releases)) on the emulator. New test wallets
+are funded by the dev faucet on connect. For devnet: `scripts/devnet_setup.sh`, then `scripts/fund_pool.sh`.
 
-Production configuration: [backend/.env.example](backend/.env.example).
-
-## 19. Testing
+## Tests
 
 ```bash
-cd backend && uv run pytest -q                       # 28 tests (1 localnet test skipped)
-scripts/e2e_localnet.sh                              # real deposit + pool payout + double-pay guard + SDK on a throwaway validator
-anchor test --validator legacy                       # program tests
-./gradlew :app:testDebugUnitTest :app:assembleDebug  # Kotlin evidence chain vs golden vectors + APK
-cd backend && uv run python -m tests.sim             # live 60 s run against a running ATTEST
-cd backend && uv run python -m tests.sim --fast      # compressed run → rejected by the server clock
+cd backend && uv run pytest -q                 # 33 tests: protocol, replay, policy, stakes, forfeits, bonuses, pools, faucet
+scripts/e2e_localnet.sh                        # real chain: deposit, stake round trip, forged stake refused, payout, SDK
+anchor test --validator legacy                 # program: attestor auth, day range, claim index, streak, double settlement
+./gradlew :app:testDebugUnitTest               # Kotlin evidence chain = Python golden vectors
+python3 scripts/device_e2e.py <adb-serial> happy leave   # drives the real app + wallet on a device/emulator
 ```
-
-Covered: unique nonces, expiry, valid chain, tampered checkpoint, wrong root, first claim vs second claim, replayed
-steps, insufficient checkpoints/duration, missing interaction/background, wrong assurance, wrong-wallet signature,
-invalid wallet, stolen session without the ephemeral key, SIWS binding, SGT parsing, instruction layout, on-chain
-write + on-chain double-settlement rejection, sponsor deposits (no double credit, no fakes), pool reservation,
-3 claims/day with distinct claim indexes, automation detection, mission drafting and validation.
-
-## 20. Demo
-
-See [docs/demo.md](docs/demo.md). Automated on a USB phone or emulator:
-`python3 scripts/device_e2e.py <adb-serial> happy cargo again leave`.

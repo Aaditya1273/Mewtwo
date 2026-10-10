@@ -5,34 +5,26 @@ All rules are evaluated in one function, `policy.evaluate`. The app renders what
 
 ## Shipped missions
 
-| Mission | What it attests | Claims/day | Reward |
-|---|---|---|---|
-| `asha-village-visit` | An attended 60-second check-in at the start of a field visit | 1 per device | 180 XP + 0.5 SKR from the sponsor pool |
-| `cold-chain-cargo` | An attended 60-second stop with the consignment at a handover | 3 per device | 250 XP + 1 SKR per handover |
+| Mission | Session | Checks | Claims/day | Stake | Finish |
+|---|---|---|---|---|---|
+| `quick-clock-in` | 2 min | 4 (one per 30 s window) | 3 per device | 1 SKR | stake back + 20% from the pool, 60 XP |
+| `deep-focus-25` | 25 min | 5 (one per 5 min window) | 1 per device | 5 SKR | stake back + 20% from the pool, 300 XP |
 
-Sponsors shown in the app are **illustrative examples**, not partners. **Neither mission proves location.** PRESENCE
-collects no GPS by design. They prove that one Seeker device ran an attended, server-timed 60-second process.
-Binding a check-in to a place (a rotating code displayed at the site) and temperature-logger hashes as a checkpoint
-field are planned, not built.
+Each window's presence check appears at a random moment 15–60% into the window. The phone buzzes, and the user
+taps *I'm here*. Missing a check, leaving the app, or a run the automation heuristics flag forfeits the stake to
+the mission pool. The bonus is `stake × bonus_rate`, capped by what the pool holds (forfeits plus sponsor top-ups).
 
 ```json
 {
-  "mission_id": "cold-chain-cargo",
-  "name": "Cold-Chain Handover",
-  "description": "A driver attests an attended 60-second stop with the consignment at a handover. Up to 3 handovers a day.",
-  "steps": ["Open PRESENCE at the handover point", "..."],
-  "required_assurance": "P2",
-  "duration_seconds": 60,
-  "required_checkpoints": 6,
-  "checkpoint_interval_seconds": 10,
-  "min_interactions_per_checkpoint": 1,
-  "witness_required": false,
-  "max_claims_per_identity_per_day": 3,
-  "reward": { "xp": 250, "token": 1.0, "symbol": "SKR" },
-  "sponsor": "Example sponsor: pharma logistics partner (illustrative)",
-  "why": "..."
+  "mission_id": "quick-clock-in",
+  "duration_seconds": 120, "required_checkpoints": 4, "checkpoint_interval_seconds": 30,
+  "min_interactions_per_checkpoint": 1, "max_claims_per_identity_per_day": 3,
+  "reward": { "xp": 60, "token": 0, "symbol": "SKR" },
+  "stake": { "token": 1.0, "bonus_rate": 0.2 }
 }
 ```
+
+Sessions expire `duration + 300 s` after creation; an unfinished staked session is forfeited at expiry.
 
 ## Rules enforced
 
@@ -54,7 +46,7 @@ field are planned, not built.
 - unknown assurance level, or `witness_required: true` (P3 not implemented): refused
 - `duration_seconds` must equal `required_checkpoints × checkpoint_interval_seconds`, interval ≥ 5 s
 - `max_claims_per_identity_per_day` in 1..255 (it is the on-chain claim index, a `u8`)
-- no negative rewards
+- `bonus_rate` in 0..1; no negative rewards or stakes
 
 ## Drafting missions from plain language
 

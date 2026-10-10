@@ -31,6 +31,16 @@ class SimDevice:
     def sign_wallet(self, message: str) -> str:
         return base58.b58encode(self.wallet_key.sign(message.encode())).decode()
 
+    def sign_transaction(self, tx_b64: str) -> str:
+        """Sign an issued Solana transaction as a wallet would (same ed25519 key as the wallet address)."""
+        from solders.keypair import Keypair
+        from solders.transaction import Transaction
+        seed = self.wallet_key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+                                             serialization.NoEncryption())
+        tx = Transaction.from_bytes(base64.b64decode(tx_b64))
+        signed = Transaction([Keypair.from_seed(seed)], tx.message, tx.message.recent_blockhash)
+        return base64.b64encode(bytes(signed)).decode()
+
     def sign_ephemeral(self, data: bytes) -> str:
         return base64.b64encode(self.ephemeral.sign(data, ec.ECDSA(hashes.SHA256()))).decode()
 
@@ -75,10 +85,15 @@ def main(base: str = "http://127.0.0.1:8787", fast: bool = False) -> None:
         return r.json()
 
     mission = ok(c.get("/missions"))[0]
+    if mission.get("stake", {}).get("token"):
+        print("faucet:", ok(c.post("/dev/faucet", json={"wallet": dev.wallet})))
     s = ok(c.post("/session", json={"wallet": dev.wallet, "mission_id": mission["mission_id"],
                                     "ephemeral_pubkey": dev.ephemeral_pubkey}))
-    print(f"session {s['session_id']} mode={s['mode']} wallet={dev.wallet}")
-    print(ok(c.post(f"/session/{s['session_id']}/authorize", json={"signature": dev.sign_wallet(s["siws_message"])})))
+    print(f"session {s['session_id']} mode={s['mode']} wallet={dev.wallet} stake={s.get('stake') and s['stake']['amount']}")
+    auth = {"signature": dev.sign_wallet(s["siws_message"])}
+    if s.get("stake"):
+        auth["stake_transaction"] = dev.sign_transaction(s["stake"]["transaction"])
+    print(ok(c.post(f"/session/{s['session_id']}/authorize", json=auth)))
     sess = SimSession(dev, s["session_id"], s["nonce"])
     interval = 0.5 if fast else mission["checkpoint_interval_seconds"]
     for i in range(mission["required_checkpoints"]):

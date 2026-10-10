@@ -13,6 +13,9 @@
 | **Wrong-wallet SGT** | SGT check runs on the wallet that signed the SIWS message, never on a client-supplied address | — |
 | **Witness collusion** | N/A: P3 not implemented | — |
 | **Privacy leakage** | Counts only, no location/sensors; only a 32-byte root on-chain | Wallet address ↔ daily activity is public on-chain by design |
+| **Stake swapped by a client** | ATTEST builds the stake transfer and only submits a signed transaction whose message is byte-identical to the one it issued (`submit_stake`) | — |
+| **Draining the bonus pool** | Bonus ≤ `stake × bonus_rate` and ≤ pool balance; one claim index per Seeker per mission per day; quitting forfeits the stake | Dev mode keys claims by wallet |
+| **Stake lost to a race** | Claim limit is checked before the stake is submitted and again after | A concurrent claim between the checks leaves the stake to forfeit at expiry (documented `ponytail:` note) |
 | **Fake sponsor deposits** | `/sponsor/deposit` reads the transaction from chain and credits only the REWARD_MINT that actually moved into the pool account; each signature credits once | — |
 | **Unfunded rewards** | Rewards are reserved from the mission's deposited pool when a run is verified; an empty pool means the run is still attested, but no tokens are paid (`funding: UNFUNDED`) | — |
 | **Rogue attestations** | Program `has_one = attestor`; day restricted to today/yesterday | Attestor key compromise. Keep it in a KMS/HSM in production. |
