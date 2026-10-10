@@ -41,4 +41,4 @@ ATTEST_DB=$STATE/attest.db
 ENV
 echo "wrote $STATE/attest.env"
 echo "run:   cd backend && set -a && . ../.devnet/attest.env && set +a && ATTEST_DEV_MODE=true uv run python -m attest.app"
-echo "fund:  scripts/fund_pool.sh devnet $KEY $SPONSOR_KEY $MINT http://localhost:8787 asha-village-visit=50 cold-chain-cargo=100"
+echo "fund:  scripts/fund_pool.sh devnet $KEY $SPONSOR_KEY $MINT http://localhost:8787 quick-clock-in=20 deep-focus-25=50"

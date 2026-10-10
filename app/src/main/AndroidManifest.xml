@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Buzz when a presence check appears while the phone is face-up on the desk. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Backups disabled: prefs hold the MWA auth token. -->
     <application

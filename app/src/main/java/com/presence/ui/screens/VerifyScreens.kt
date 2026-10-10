@@ -132,6 +132,10 @@ fun ReceiptScreen(r: Screen.Result, onDone: () -> Unit) = Page {
                 Column(Modifier.weight(1f)) {
                     Text("+${rc.reward.xp} XP", style = MaterialTheme.typography.headlineMedium, color = Ink.Text)
                     when {
+                        rc.reward.stake > 0 && s.rewardToken > 0 -> Text(
+                            "${formatToken(rc.reward.stake)} ${s.rewardSymbol} stake back" +
+                                if (rc.reward.bonus > 0) " + ${formatToken(rc.reward.bonus)} bonus from the pool" else "",
+                            style = MaterialTheme.typography.bodyMedium, color = Ink.Verified)
                         s.rewardToken > 0 -> Text("+${formatToken(s.rewardToken)} ${s.rewardSymbol} paid from sponsor pool",
                             style = MaterialTheme.typography.bodyMedium, color = Ink.Verified)
                         rc.reward.funding == "UNFUNDED" -> Text("Sponsor pool empty: no ${rc.reward.symbol} paid",
@@ -235,6 +239,11 @@ fun FailedScreen(f: Screen.Failed, onRetry: () -> Unit, onHome: () -> Unit) = Pa
     Text("NOT VERIFIED", style = MaterialTheme.typography.displayMedium, color = Ink.Fail)
     Gap(16)
     Text(reasonMessage(f.reason), style = MaterialTheme.typography.bodyLarge, color = Ink.Text)
+    f.stakeLost?.let {
+        Gap(10)
+        Text("Your $it stake went to the pool. It pays the bonus of everyone who finished.",
+            style = MaterialTheme.typography.bodyMedium, color = Ink.Fail)
+    }
     Gap(10)
     Text(f.reason, style = MaterialTheme.typography.labelSmall, color = Ink.Muted)
     if (f.detail.isNotBlank()) Text(f.detail, style = MaterialTheme.typography.labelSmall, color = Ink.Muted)

@@ -38,7 +38,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import android.os.VibrationEffect
+import android.os.Vibrator
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.presence.session.Screen
@@ -47,8 +52,19 @@ import com.presence.ui.theme.Ink
 @Composable
 fun ActiveScreen(a: Screen.Active, onPulse: () -> Unit) = Page {
     val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
+    val context = LocalContext.current
+    // The phone sits face-up on the desk: keep the screen (and so the session) alive.
+    DisposableEffect(Unit) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
     LaunchedEffect(a.checkpointsDone) {
         if (a.checkpointsDone > 0) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+    LaunchedEffect(a.promptVisible) {
+        if (a.promptVisible) context.getSystemService(Vibrator::class.java)?.vibrate(
+            VibrationEffect.createWaveform(longArrayOf(0, 180, 120, 180), -1))
     }
     val breathe = rememberInfiniteTransition(label = "breathe")
     val glow by breathe.animateFloat(0.3f, 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "glow")
@@ -158,7 +174,7 @@ private fun PresenceCheck(a: Screen.Active, onConfirm: () -> Unit) {
                 when {
                     a.leftForeground -> "You left the session. That window will not satisfy the mission policy."
                     a.confirmedThisWindow -> "✓ Presence confirmed for this window"
-                    else -> "Stay with the session. A presence check appears once in every window."
+                    else -> "Phone down, focus on. It buzzes once per window; tap \"I'm here\" when it does."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = when {
@@ -181,7 +197,7 @@ fun CountdownScreen(seconds: Int) = Page {
     Gap(8)
     Text("$seconds", style = MaterialTheme.typography.displayLarge, color = Ink.Text)
     Gap(8)
-    Text("For 60 seconds your phone seals a signed evidence chain. Answer each presence check and stay in the app.",
+    Text("Phone down, screen on. Each buzz is a presence check: tap \"I'm here\". Leave the app and the stake goes to the pool.",
         style = MaterialTheme.typography.bodyLarge, color = Ink.Muted)
     Spacer(Modifier.weight(1f))
 }

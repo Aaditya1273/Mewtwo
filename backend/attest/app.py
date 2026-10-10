@@ -24,6 +24,7 @@ class CreateSession(BaseModel):
 
 class Authorize(BaseModel):
     signature: str = Field(description="base58 ed25519 signature of siws_message by the wallet")
+    stake_transaction: str | None = Field(None, description="base64 stake transaction from /session, signed by the wallet")
 
 
 class Checkpoint(BaseModel):
@@ -49,6 +50,10 @@ class Verify(BaseModel):
 class SponsorDeposit(BaseModel):
     mission_id: str
     signature: str = Field(description="confirmed transaction that moved REWARD_MINT into the pool account")
+
+
+class Faucet(BaseModel):
+    wallet: str
 
 
 class GenerateMission(BaseModel):
@@ -90,7 +95,7 @@ def create_app(service: Attest | None = None) -> FastAPI:
 
     @app.post("/session/{session_id}/authorize")
     def authorize(session_id: str, body: Authorize):
-        return svc.authorize(session_id, body.signature)
+        return svc.authorize(session_id, body.signature, body.stake_transaction)
 
     @app.post("/session/{session_id}/checkpoint")
     def checkpoint(session_id: str, body: Checkpoint):
@@ -131,6 +136,10 @@ def create_app(service: Attest | None = None) -> FastAPI:
         return {"pool_account": str(pool) if pool else None,
                 "mint": str(svc.attestor.reward_mint) if svc.attestor.reward_mint else None,
                 "missions": svc.pools()}
+
+    @app.post("/dev/faucet")
+    def faucet(body: Faucet):
+        return svc.faucet(body.wallet)
 
     @app.get("/profile/{wallet}")
     def profile(wallet: str):

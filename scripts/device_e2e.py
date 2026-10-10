@@ -71,25 +71,26 @@ def fresh_identity() -> None:
     adb("shell", "am", "start", "-n", "com.presence/.MainActivity")
     tap("Connect wallet")
     tap("AUTHORIZE")
-    wait_for("Today's proofs")
+    wait_for("Clock in")
 
 
-def run_mission(skip_window: int | None = None, leave_at: float | None = None, mission: str = "ASHA Village Visit") -> str:
+def run_mission(skip_window: int | None = None, leave_at: float | None = None, mission: str = "Quick Clock-In") -> str:
     tap(mission)
-    tap("For 60 seconds only")       # consent row
-    tap("Start mission")
-    tap("AUTHORIZE")                  # wallet signs the SIWS message
-    wait_for("Evidence chain", 20)    # countdown, then the active session
+    tap("During the session")         # consent row
+    tap("clock in")                   # "Stake 1 & clock in"
+    tap("AUTHORIZE")                  # wallet signs the SIWS message...
+    tap("AUTHORIZE")                  # ...and the stake transaction, in the same wallet session
+    wait_for("Evidence chain", 90)    # stake confirmation + countdown, then the active session
     start = time.time()
     left = False
-    while time.time() - start < 62:   # answer each window's presence check when it appears
+    while time.time() - start < 200 and find("Evidence chain"):  # answer each presence check as it appears
         elapsed = time.time() - start
         if leave_at is not None and not left and elapsed > leave_at:
             adb("shell", "input", "keyevent", "KEYCODE_HOME")
             time.sleep(4)
             adb("shell", "am", "start", "-n", "com.presence/.MainActivity")
             left = True
-        if (xy := find("I'M HERE")) and (skip_window is None or int(elapsed // 10) != skip_window):
+        if (xy := find("I'M HERE")) and (skip_window is None or int(elapsed // 30) != skip_window):
             adb("shell", "input", "tap", str(xy[0]), str(xy[1]))
         time.sleep(0.3)
     end = time.time() + 60
@@ -111,10 +112,10 @@ def main() -> None:
             tap("Done")
             time.sleep(2)
             print("home:", texts())
-        elif scenario == "cargo":      # multi-claim mission: two handovers today, each its own on-chain record
-            for _ in range(2):
+        elif scenario == "twice":      # multi-claim mission: a second clock-in today, its own on-chain record
+            for _ in range(1):
                 adb("shell", "am", "start", "-n", "com.presence/.MainActivity")
-                print(run_mission(mission="Cold-Chain Handover"))
+                print(run_mission())
                 tap("Done")
                 time.sleep(2)
             print("home:", texts())
@@ -124,7 +125,7 @@ def main() -> None:
             print("home:", texts())
         elif scenario == "leave":
             fresh_identity()
-            print(run_mission(leave_at=25))
+            print(run_mission(leave_at=40))
             tap("Home")
         elif scenario == "skip":
             fresh_identity()

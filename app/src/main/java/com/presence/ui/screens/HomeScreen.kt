@@ -53,12 +53,13 @@ fun HomeScreen(s: UiState, onConnect: () -> Unit, onOpen: (MissionPolicy) -> Uni
         }
 
         if (s.missions.isNotEmpty()) {
-            Eyebrow("Today's proofs")
+            Eyebrow("Clock in")
             Gap(10)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 s.missions.forEach { m ->
                     val used = s.profile?.claimsToday?.get(m.missionId) ?: 0
-                    MissionCard(m, used, enabled = s.wallet != null && !s.busy && used < m.maxClaimsPerDay) { onOpen(m) }
+                    MissionCard(m, used, s.pools[m.missionId]?.remaining,
+                        enabled = s.wallet != null && !s.busy && used < m.maxClaimsPerDay) { onOpen(m) }
                 }
             }
             Gap(16)
@@ -75,7 +76,7 @@ fun HomeScreen(s: UiState, onConnect: () -> Unit, onOpen: (MissionPolicy) -> Uni
     }
 
 @Composable
-private fun MissionCard(m: MissionPolicy, usedToday: Int, enabled: Boolean, onClick: () -> Unit) {
+private fun MissionCard(m: MissionPolicy, usedToday: Int, pool: Double?, enabled: Boolean, onClick: () -> Unit) {
     val done = usedToday >= m.maxClaimsPerDay
     Row(
         Modifier.fillMaxWidth()
@@ -88,9 +89,12 @@ private fun MissionCard(m: MissionPolicy, usedToday: Int, enabled: Boolean, onCl
         Column(Modifier.weight(1f)) {
             Text(m.name, style = MaterialTheme.typography.titleMedium, color = Ink.Text)
             Gap(2)
-            val token = if (m.reward.token > 0) " · ${formatToken(m.reward.token)} ${m.reward.symbol}" else ""
-            Text("${assuranceLabel(m.requiredAssurance)} · ${m.durationSeconds}s · +${m.reward.xp} XP$token",
-                style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+            val minutes = if (m.durationSeconds >= 60) "${m.durationSeconds / 60} min" else "${m.durationSeconds}s"
+            val stake = if (m.stake.token > 0)
+                " · stake ${formatToken(m.stake.token)} ${m.reward.symbol}, +${(m.stake.bonusRate * 100).toInt()}%" else ""
+            Text("$minutes$stake", style = MaterialTheme.typography.bodyMedium, color = Ink.Muted)
+            if (pool != null && pool > 0) Text("Pool ${formatToken(pool)} ${m.reward.symbol}",
+                style = MaterialTheme.typography.labelSmall, color = Ink.Verified)
         }
         Text(
             when {

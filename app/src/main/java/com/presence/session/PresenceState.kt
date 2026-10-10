@@ -29,7 +29,7 @@ sealed interface Screen {
     ) : Screen
     data class Verifying(val checks: List<Check>) : Screen
     data class Result(val receipt: Receipt, val checkpointHashes: List<String>) : Screen
-    data class Failed(val reason: String, val detail: String) : Screen
+    data class Failed(val reason: String, val detail: String, val stakeLost: String? = null) : Screen
 }
 
 data class UiState(
@@ -38,6 +38,7 @@ data class UiState(
     val health: Health? = null,
     val backendError: String? = null,
     val missions: List<MissionPolicy> = emptyList(),
+    val pools: Map<String, com.presence.attest.PoolInfo> = emptyMap(),
     /** The mission the user picked; defaults to the first one. */
     val mission: MissionPolicy? = null,
     val profile: Profile? = null,
@@ -55,7 +56,8 @@ fun reasonMessage(reason: String): String = when (reason) {
     "EVIDENCE_CHAIN_INVALID" -> "Session evidence was inconsistent and was rejected."
     "POLICY_NOT_SATISFIED" -> "The mission requirements were not met."
     "AUTOMATION_DETECTED" -> "The presence checks were answered like a script, not a person."
-    "ALREADY_CLAIMED" -> "This device already completed today's proof."
+    "ALREADY_CLAIMED" -> "You've used today's clock-ins for this mission."
+    "STAKE_REQUIRED", "STAKE_FAILED" -> "The stake didn't go through, so the session didn't start. Nothing was taken."
     "ATTESTATION_FAILED" -> "Verification succeeded but the on-chain attestation failed."
     "NETWORK_ERROR" -> "Can't reach the ATTEST server."
     "WALLET_NOT_CONNECTED" -> "Connect your wallet first."

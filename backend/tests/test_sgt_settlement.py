@@ -112,3 +112,37 @@ def test_settings_default_is_not_dev_mode(monkeypatch):
     monkeypatch.delenv("ATTEST_DEV_MODE", raising=False)
     assert Settings.from_env().dev_mode is False
     assert json.dumps(Settings.from_env().chain_id) == '"solana:mainnet"'
+
+
+@pytest.mark.localnet
+@pytest.mark.skipif("LOCALNET_ATTESTOR" not in os.environ, reason="run via scripts/e2e_localnet.sh")
+def test_localnet_stake_round_trip():
+    """Faucet -> user signs the issued stake tx (as a wallet would) -> stake lands in the pool ->
+    settlement returns stake + bonus. A modified stake transaction is refused."""
+    from solders.keypair import Keypair
+    from solders.transaction import Transaction
+
+    a = SolanaAttestor(os.environ.get("SOLANA_RPC_URL", "http://127.0.0.1:8899"), "localnet",
+                       os.environ.get("PROGRAM_ID", PROGRAM_ID), Path(os.environ["LOCALNET_ATTESTOR"]),
+                       reward_mint=os.environ["REWARD_MINT"], reward_decimals=6)
+    user = Keypair()
+    a.faucet(str(user.pubkey()), 10_000_000, 50_000_000)
+    ata = associated_token_address(user.pubkey(), a.reward_mint)
+    bal = lambda: a._rpc("getTokenAccountBalance", [str(ata), {"commitment": "confirmed"}])["value"]["uiAmountString"]  # noqa: E731
+    assert bal() == "50"
+
+    unsigned = a.build_stake_tx(str(user.pubkey()), 1_000_000)
+    tx = Transaction.from_bytes(unsigned)
+    signed = Transaction([user], tx.message, tx.message.recent_blockhash)
+    other = Transaction.from_bytes(a.build_stake_tx(str(user.pubkey()), 2_000_000))
+    with pytest.raises(ValueError):
+        a.submit_stake(bytes(Transaction([user], other.message, other.message.recent_blockhash)), unsigned)
+    a.submit_stake(bytes(signed), unsigned)
+    assert bal() == "49"
+
+    day = int(a._rpc("getBlockTime", [a._rpc("getSlot", [])]) // 86_400)
+    res = a.settle(AttestationRecord(wallet=str(user.pubkey()), day=day, mission_id="quick-clock-in",
+                                     evidence_root=bytes(32), assurance_level=2, sgt_mint=None,
+                                     reward_base=1_200_000))  # stake 1 + bonus 0.2
+    assert res.status == "CONFIRMED", res.detail
+    assert bal() == "50.2"

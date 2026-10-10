@@ -32,6 +32,6 @@ spl mint "$REWARD_MINT" 10000 --recipient-owner "$(solana-keygen pubkey "$STATE/
 # Once ATTEST is up, the sponsor funds both mission pools.
 ( until curl -s -m1 localhost:8787/health >/dev/null; do sleep 1; done
   "$ROOT/scripts/fund_pool.sh" localhost "$STATE/attestor.json" "$STATE/sponsor.json" "$REWARD_MINT" http://localhost:8787 \
-    asha-village-visit=50 cold-chain-cargo=100 ) &
+    quick-clock-in=20 deep-focus-25=50 ) &
 echo "ATTEST (DEVELOPMENT MODE) on :8787, program $PROGRAM_ID on localnet"
 uv run python -m attest.app

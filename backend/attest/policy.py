@@ -26,6 +26,8 @@ class MissionPolicy:
     reward_xp: int
     reward_token: float = 0.0  # paid from the sponsor's pool in REWARD_MINT units (UI amount)
     reward_symbol: str = "SKR"
+    stake_token: float = 0.0  # user's own stake (REWARD_MINT UI amount): returned on success, forfeited to the pool otherwise
+    bonus_rate: float = 0.0   # finishers earn stake * bonus_rate from the pool (funded by forfeits and sponsors)
     sponsor: str = ""
     why: str = ""
     timing_tolerance_seconds: int = 3
@@ -49,6 +51,7 @@ class MissionPolicy:
             "witness_required": self.witness_required,
             "max_claims_per_identity_per_day": self.max_claims_per_identity_per_day,
             "reward": {"xp": self.reward_xp, "token": self.reward_token, "symbol": self.reward_symbol},
+            "stake": {"token": self.stake_token, "bonus_rate": self.bonus_rate},
             "sponsor": self.sponsor,
             "why": self.why,
         }
@@ -66,8 +69,10 @@ def build_policy(m: dict) -> MissionPolicy:
     """Validate one mission definition. Used for missions.json and for generated drafts."""
     m = dict(m)
     reward = m.pop("reward")
+    stake = m.pop("stake", {})
     p = MissionPolicy(reward_xp=int(reward["xp"]), reward_token=float(reward.get("token", 0)),
-                      reward_symbol=reward.get("symbol", "SKR"), **m)
+                      reward_symbol=reward.get("symbol", "SKR"), stake_token=float(stake.get("token", 0)),
+                      bonus_rate=float(stake.get("bonus_rate", 0)), **m)
     if p.required_assurance not in ASSURANCE_LEVELS:
         raise ValueError(f"{p.mission_id}: unknown assurance {p.required_assurance}")
     if p.witness_required:
@@ -79,7 +84,9 @@ def build_policy(m: dict) -> MissionPolicy:
         raise ValueError(f"{p.mission_id}: duration must equal checkpoints x interval")
     if not 1 <= p.max_claims_per_identity_per_day <= 255:
         raise ValueError(f"{p.mission_id}: max claims per day must be 1..255 (on-chain claim index is a u8)")
-    if p.reward_token < 0 or p.reward_xp < 0:
+    if not 0 <= p.bonus_rate <= 1:
+        raise ValueError(f"{p.mission_id}: bonus_rate must be within 0..1")
+    if p.reward_token < 0 or p.reward_xp < 0 or p.stake_token < 0:
         raise ValueError(f"{p.mission_id}: rewards cannot be negative")
     return p
 

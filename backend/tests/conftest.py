@@ -10,8 +10,8 @@ from attest.settlement import Deposit, Settlement
 
 from .sim import SimDevice, SimSession
 
-MISSION = "asha-village-visit"
-CARGO = "cold-chain-cargo"
+MISSION = "quick-clock-in"     # 4 checkpoints x 30 s, 1 SKR stake, 3 claims a day
+DEEP = "deep-focus-25"
 
 
 class Clock:
@@ -33,11 +33,24 @@ class RecordingAttestor:
     def __init__(self):
         self.records = []
         self.deposits = {}
+        self.stakes = []
 
     def settle(self, rec):
         self.records.append(rec)
         return Settlement(status="CONFIRMED", signature=f"sig{len(self.records)}", network="localnet",
                           reward_base=rec.reward_base, reward_mint=self.reward_mint if rec.reward_base else None)
+
+    def build_stake_tx(self, wallet, amount_base):
+        return f"stake:{wallet}:{amount_base}".encode()
+
+    def submit_stake(self, signed_tx, unsigned_tx):
+        if signed_tx != b"signed:" + unsigned_tx:  # stands in for "same message + valid user signature"
+            raise ValueError("signed transaction differs from the stake transaction ATTEST issued")
+        self.stakes.append(unsigned_tx)
+        return f"stakesig{len(self.stakes)}"
+
+    def faucet(self, wallet, lamports, amount_base):
+        return "faucetsig"
 
     def verify_deposit(self, signature):
         if signature not in self.deposits:
@@ -77,13 +90,21 @@ def start(api, device, mission=MISSION) -> SimSession:
                                    "ephemeral_pubkey": device.ephemeral_pubkey})
     assert r.status_code == 200, r.text
     body = r.json()
-    r = api.post(f"/session/{body['session_id']}/authorize",
-                 json={"signature": device.sign_wallet(body["siws_message"])})
+    r = api.post(f"/session/{body['session_id']}/authorize", json=authorize_body(device, body))
     assert r.status_code == 200, r.text
     return SimSession(device, body["session_id"], body["nonce"])
 
 
-def run_process(api, sess: SimSession, clock: Clock, checkpoints=6, interval=10.0, **cp_kwargs):
+def authorize_body(device, session: dict) -> dict:
+    """What the app sends: the SIWS signature, plus the wallet-signed stake transaction if one was issued."""
+    import base64
+    body = {"signature": device.sign_wallet(session["siws_message"])}
+    if session.get("stake"):
+        body["stake_transaction"] = base64.b64encode(b"signed:" + base64.b64decode(session["stake"]["transaction"])).decode()
+    return body
+
+
+def run_process(api, sess: SimSession, clock: Clock, checkpoints=4, interval=30.0, **cp_kwargs):
     for _ in range(checkpoints):
         clock.advance(interval)
         r = api.post(f"/session/{sess.session_id}/checkpoint",

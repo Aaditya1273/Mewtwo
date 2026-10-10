@@ -53,6 +53,23 @@ CREATE TABLE IF NOT EXISTS sponsor_deposits (
   depositor TEXT,
   created_at REAL NOT NULL
 );
+-- The user's own stake for a session. Held in the pool account from authorize onward.
+-- HELD -> RETURNED (verified + settled) | FORFEITED (rejected, or the session expired unfinished).
+CREATE TABLE IF NOT EXISTS stakes (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+  wallet TEXT NOT NULL,
+  mission_id TEXT NOT NULL,
+  amount_base INTEGER NOT NULL,
+  unsigned_tx BLOB NOT NULL,
+  signature TEXT,
+  status TEXT NOT NULL            -- ISSUED | HELD | RETURNED | FORFEITED
+);
+-- DEVELOPMENT faucet: one grant per wallet.
+CREATE TABLE IF NOT EXISTS faucet_grants (
+  wallet TEXT PRIMARY KEY,
+  signature TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS profiles (
   wallet TEXT PRIMARY KEY,
   xp INTEGER NOT NULL DEFAULT 0,

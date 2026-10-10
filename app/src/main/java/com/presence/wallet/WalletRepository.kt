@@ -63,6 +63,33 @@ class WalletRepository @Inject constructor(
         }
     }
 
+    /**
+     * One wallet session for starting a mission: sign the SIWS-format message and, if the mission is
+     * staked, the stake transaction ATTEST issued. ATTEST checks the transaction is byte-identical
+     * before submitting it, so the wallet can only ever approve the exact stake it was shown.
+     */
+    suspend fun signSession(sender: ActivityResultSender, message: String, stakeTx: ByteArray?): Pair<ByteArray, ByteArray?> {
+        val current = account ?: throw AttestException("WALLET_NOT_CONNECTED")
+        val address = Base58.decode(current.address)
+        val result = adapter.transact(sender) {
+            val signed = signMessagesDetached(arrayOf(message.toByteArray()), arrayOf(address))
+            val stake = stakeTx?.let { signTransactions(arrayOf(it)) }
+            Pair(signed, stake)
+        }
+        return when (result) {
+            is TransactionResult.Success -> {
+                val (signed, stake) = result.payload
+                val sig = signed.messages.firstOrNull()?.signatures?.firstOrNull()
+                    ?: throw AttestException("INVALID_SIGNATURE", "wallet returned no signature")
+                val stakeSigned = stake?.signedPayloads?.firstOrNull()
+                if (stakeTx != null && stakeSigned == null) throw AttestException("STAKE_FAILED", "wallet did not sign the stake")
+                sig to stakeSigned
+            }
+            is TransactionResult.NoWalletFound -> throw AttestException("WALLET_NOT_FOUND")
+            is TransactionResult.Failure -> throw AttestException("WALLET_REJECTED", result.e.message ?: "")
+        }
+    }
+
     fun disconnect() {
         prefs.edit().remove(KEY_ADDRESS).remove(KEY_LABEL).remove(KEY_TOKEN).apply()
         adapter.authToken = null

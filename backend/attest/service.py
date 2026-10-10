@@ -5,6 +5,7 @@ State machine (invalid transitions fail):
                                                                  \\-> REJECTED
 """
 
+import base64
 import json
 import logging
 import secrets
@@ -100,8 +101,10 @@ class Attest:
         with self.db:
             self._save_profile(p)
             self.db.execute("UPDATE sessions SET state='REJECTED', receipt=? WHERE id=?",
-                            (json.dumps({"status": "REJECTED", "reason": err.reason, "detail": err.detail}),
+                            (json.dumps({"status": "REJECTED", "reason": err.reason, "detail": err.detail,
+                                         "stake_forfeited": self._held_stake(row["id"]) / 10 ** self._decimals()}),
                              row["id"]))
+            self.db.execute("UPDATE stakes SET status='FORFEITED' WHERE session_id=? AND status='HELD'", (row["id"],))
         event("rejected", row["id"], mission_id=row["mission_id"], reason=err.reason)
 
     # ---------- protocol steps ----------
@@ -111,28 +114,43 @@ class Attest:
         identity.decode_wallet(wallet)
         identity.load_ephemeral_key(ephemeral_pubkey)
         now = self.clock()
+        ttl = policy.duration_seconds + self.ttl  # the whole process must fit, plus slack to start it
         session_id, nonce = str(uuid.uuid4()), secrets.token_hex(16)
         message = identity.siws_message(
             domain=self.domain, wallet=wallet, chain_id=self.chain_id, nonce=nonce,
             session_id=session_id, mission_name=policy.name, ephemeral_pubkey_b64=ephemeral_pubkey,
-            issued_at=now, expires_at=now + self.ttl)
+            issued_at=now, expires_at=now + ttl)
+        stake_base, stake_tx = self._stake_base(policy), None
+        if stake_base:
+            try:
+                stake_tx = self.attestor.build_stake_tx(wallet, stake_base)
+            except Exception as e:  # network / RPC
+                raise AttestError(Reason.NETWORK_ERROR, f"could not build stake transaction: {e}") from e
         with self.lock, self.db:
             self.db.execute(
                 "INSERT INTO sessions (id, nonce, mission_id, wallet, ephemeral_pubkey, siws_message, state, "
                 "created_at, expires_at, chain_head) VALUES (?,?,?,?,?,?,'CREATED',?,?,?)",
-                (session_id, nonce, mission_id, wallet, ephemeral_pubkey, message, now, now + self.ttl,
+                (session_id, nonce, mission_id, wallet, ephemeral_pubkey, message, now, now + ttl,
                  evidence.genesis(session_id, nonce)))
-        event("session_created", session_id, mission_id=mission_id)
+            if stake_tx:
+                self.db.execute("INSERT INTO stakes VALUES (?,?,?,?,?,NULL,'ISSUED')",
+                                (session_id, wallet, mission_id, stake_base, stake_tx))
+        event("session_created", session_id, mission_id=mission_id, staked=bool(stake_tx))
+        stake = ({"amount": stake_base / 10 ** self._decimals(), "symbol": self.symbol(policy),
+                  "transaction": base64.b64encode(stake_tx).decode()} if stake_tx else None)
         return {"session_id": session_id, "nonce": nonce, "siws_message": message,
-                "expires_at": now + self.ttl, "policy": policy.public(),
+                "expires_at": now + ttl, "policy": policy.public(), "stake": stake,
                 "mode": "development" if self.dev_mode else "production"}
 
-    def authorize(self, session_id: str, wallet_signature_b58: str) -> dict:
+    def authorize(self, session_id: str, wallet_signature_b58: str, signed_stake_tx_b64: str | None = None) -> dict:
         with self.lock:
             row = self._session(session_id)
             self._expect(row, "CREATED")
             self._live(row)
             identity.verify_wallet_signature(row["wallet"], row["siws_message"], wallet_signature_b58)
+            stake = self.db.execute("SELECT * FROM stakes WHERE session_id=?", (session_id,)).fetchone()
+            if stake is not None and not signed_stake_tx_b64:
+                raise AttestError(Reason.STAKE_REQUIRED, "this mission requires a signed stake transaction")
         # Network call outside the lock; state is re-checked before the transition below.
         elig = self.sgt.check(row["wallet"])
         if not elig.eligible:
@@ -140,16 +158,29 @@ class Attest:
         identity_key = elig.sgt_mint or f"dev:{row['wallet']}"
         policy = self._mission(row["mission_id"])
         with self.lock:
-            self._expect(self._session(session_id), "CREATED")
             if self._claims_today(identity_key, policy.mission_id, utc_day(self.clock())) \
                     >= policy.max_claims_per_identity_per_day:
                 raise AttestError(Reason.ALREADY_CLAIMED, "daily claim limit reached for this device")
+        stake_sig = None
+        if stake is not None:  # network call outside the lock; the message must be exactly what we issued
+            try:
+                stake_sig = self.attestor.submit_stake(base64.b64decode(signed_stake_tx_b64), stake["unsigned_tx"])
+            except Exception as e:
+                raise AttestError(Reason.STAKE_FAILED, str(e)[:200]) from e
+        with self.lock:
+            # ponytail: a claim racing in between the checks would leave this stake HELD on a CREATED
+            # session, which forfeits on expiry; refund on that race if it ever matters.
+            self._expect(self._session(session_id), "CREATED")
             now = self.clock()
             with self.db:
                 self.db.execute("UPDATE sessions SET state='ACTIVE', started_at=?, sgt_mint=?, "
                                 "eligibility_mode=? WHERE id=?", (now, elig.sgt_mint, elig.mode, session_id))
+                if stake_sig:
+                    self.db.execute("UPDATE stakes SET status='HELD', signature=? WHERE session_id=?",
+                                    (stake_sig, session_id))
         event("authorized", session_id, mission_id=row["mission_id"], eligibility=elig.mode)
-        return {"state": "ACTIVE", "started_at": now, "eligibility": elig.mode, "sgt_mint": elig.sgt_mint}
+        return {"state": "ACTIVE", "started_at": now, "eligibility": elig.mode, "sgt_mint": elig.sgt_mint,
+                "stake_signature": stake_sig}
 
     def add_checkpoint(self, session_id: str, cp: CheckpointData, hash_hex: str, signature_b64: str) -> dict:
         with self.lock:
@@ -226,8 +257,12 @@ class Attest:
             league_before, rank_before = league_for(profile.xp), self._rank(profile.xp)
             # Reserve the token reward from the sponsor's pool; unfunded missions still attest, unpaid.
             reward_base = self._reward_base(policy)
-            funded = reward_base > 0 and self._pool_remaining(policy.mission_id) >= reward_base
+            pool = self._pool_remaining(policy.mission_id)
+            funded = reward_base > 0 and pool >= reward_base
             reserved = reward_base if funded else 0
+            # Finishers earn a bonus on their stake, paid from the pool that quitters' stakes feed.
+            stake_base = self._held_stake(session_id)
+            bonus = min(round(stake_base * policy.bonus_rate), max(pool - reserved, 0))
             profile.apply_verified(day, achieved, policy.reward_xp)
             receipt = {
                 "status": "VERIFIED",
@@ -249,7 +284,8 @@ class Attest:
                 },
                 "reward": {"xp": policy.reward_xp, "token": reserved / 10 ** self._decimals(),
                            "symbol": self.symbol(policy),
-                           "funding": "RESERVED" if funded else "UNFUNDED" if reward_base else "NONE"},
+                           "funding": "RESERVED" if funded else "UNFUNDED" if reward_base else "NONE",
+                           "stake": stake_base / 10 ** self._decimals(), "bonus": bonus / 10 ** self._decimals()},
                 "league_before": league_before,
                 "rank_before": rank_before,
                 "day": day,
@@ -258,7 +294,7 @@ class Attest:
             }
             with self.db:
                 self.db.execute("INSERT INTO claims VALUES (?,?,?,?,?,?)",
-                                (session_id, self._identity_key(row), policy.mission_id, day, seq, reserved))
+                                (session_id, self._identity_key(row), policy.mission_id, day, seq, reserved + bonus))
                 self._save_profile(profile)
                 receipt.update(league_after=league_for(profile.xp), rank_after=self._rank(profile.xp),
                                streak=profile.current_streak, total_xp=profile.xp)
@@ -283,7 +319,8 @@ class Attest:
             result = self.attestor.settle(AttestationRecord(
                 wallet=row["wallet"], day=receipt["day"], mission_id=row["mission_id"],
                 evidence_root=row["evidence_root"], assurance_level=int(receipt["assurance"][1:]),
-                sgt_mint=row["sgt_mint"], seq=claim["seq"], reward_base=claim["reward_base"]))
+                sgt_mint=row["sgt_mint"], seq=claim["seq"],
+                reward_base=claim["reward_base"] + self._held_stake(session_id)))
         finally:
             with self.lock:
                 self.settling.discard(session_id)
@@ -299,6 +336,9 @@ class Attest:
         with self.lock, self.db:
             self.db.execute("UPDATE sessions SET state=?, receipt=? WHERE id=?",
                             (state, json.dumps(receipt), session_id))
+            if state == "SETTLED":
+                self.db.execute("UPDATE stakes SET status='RETURNED' WHERE session_id=? AND status='HELD'",
+                                (session_id,))
         event("settlement", session_id, status=result.status)
         return settlement
 
@@ -316,12 +356,29 @@ class Attest:
             return 0
         return round(policy.reward_token * 10 ** self._decimals())
 
+    def _stake_base(self, policy: MissionPolicy) -> int:
+        if not getattr(self.attestor, "reward_mint", None):
+            return 0
+        return round(policy.stake_token * 10 ** self._decimals())
+
+    def _held_stake(self, session_id: str) -> int:
+        row = self.db.execute("SELECT amount_base FROM stakes WHERE session_id=? AND status='HELD'",
+                              (session_id,)).fetchone()
+        return row[0] if row else 0
+
+    def _forfeited(self, mission_id: str) -> int:
+        """Stakes lost to the pool: rejected sessions, plus held stakes whose session expired unfinished."""
+        return self.db.execute(
+            "SELECT COALESCE(SUM(k.amount_base),0) FROM stakes k JOIN sessions s ON s.id = k.session_id "
+            "WHERE k.mission_id=? AND (k.status='FORFEITED' OR (k.status='HELD' AND s.expires_at < ? "
+            "AND s.state IN ('CREATED','ACTIVE','SUBMITTED')))", (mission_id, self.clock())).fetchone()[0]
+
     def _pool_remaining(self, mission_id: str) -> int:
         deposited = self.db.execute("SELECT COALESCE(SUM(amount_base),0) FROM sponsor_deposits WHERE mission_id=?",
                                     (mission_id,)).fetchone()[0]
         reserved = self.db.execute("SELECT COALESCE(SUM(reward_base),0) FROM claims WHERE mission_id=?",
                                    (mission_id,)).fetchone()[0]
-        return deposited - reserved
+        return deposited + self._forfeited(mission_id) - reserved
 
     def sponsor_deposit(self, mission_id: str, signature: str) -> dict:
         """Credit a mission's pool with a confirmed on-chain transfer into the attestor's pool account."""
@@ -348,10 +405,28 @@ class Attest:
                                         (m.mission_id,)).fetchone()[0]
             remaining = self._pool_remaining(m.mission_id)
             out[m.mission_id] = {"symbol": self.symbol(m), "sponsor": m.sponsor,
-                                 "deposited": deposited / d, "remaining": remaining / d,
+                                 "deposited": deposited / d, "forfeited": self._forfeited(m.mission_id) / d,
+                                 "remaining": remaining / d,
                                  "reward_per_claim": m.reward_token,
                                  "claims_funded": int(remaining // max(self._reward_base(m), 1)) if self._reward_base(m) else 0}
         return out
+
+    def faucet(self, wallet: str) -> dict:
+        """DEVELOPMENT ONLY: one grant of fee SOL + test tokens per wallet; never on mainnet."""
+        if self.network == "mainnet":
+            raise AttestError(Reason.INVALID_STATE, "no faucet on mainnet")
+        identity.decode_wallet(wallet)
+        with self.lock:
+            if self.db.execute("SELECT 1 FROM faucet_grants WHERE wallet=?", (wallet,)).fetchone():
+                return {"granted": False, "detail": "already funded"}
+        try:
+            sig = self.attestor.faucet(wallet, 10_000_000, 50 * 10 ** self._decimals())  # 0.01 SOL, 50 test tokens
+        except Exception as e:
+            raise AttestError(Reason.NETWORK_ERROR, str(e)[:200]) from e
+        with self.lock, self.db:
+            self.db.execute("INSERT OR IGNORE INTO faucet_grants VALUES (?,?,?)", (wallet, sig, self.clock()))
+        event("faucet", None)
+        return {"granted": True, "signature": sig, "sol": 0.01, "tokens": 50}
 
     # ---------- reads ----------
 

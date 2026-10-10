@@ -63,6 +63,9 @@ class Attestor(Protocol):
 
     def settle(self, rec: AttestationRecord) -> Settlement: ...
     def verify_deposit(self, signature: str) -> Deposit: ...
+    def build_stake_tx(self, wallet: str, amount_base: int) -> bytes: ...
+    def submit_stake(self, signed_tx: bytes, unsigned_tx: bytes) -> str: ...
+    def faucet(self, wallet: str, lamports: int, amount_base: int) -> str: ...
 
 
 class UnconfiguredAttestor:
@@ -74,6 +77,15 @@ class UnconfiguredAttestor:
         return Settlement(status="NOT_CONFIGURED", detail="set ATTESTOR_KEYPAIR and PROGRAM_ID to anchor on-chain")
 
     def verify_deposit(self, signature: str) -> Deposit:
+        raise RuntimeError("no reward pool configured")
+
+    def build_stake_tx(self, wallet: str, amount_base: int) -> bytes:
+        raise RuntimeError("no reward pool configured")
+
+    def submit_stake(self, signed_tx: bytes, unsigned_tx: bytes) -> str:
+        raise RuntimeError("no reward pool configured")
+
+    def faucet(self, wallet: str, lamports: int, amount_base: int) -> str:
         raise RuntimeError("no reward pool configured")
 
 
@@ -139,6 +151,16 @@ def reward_ixs(pool_owner: Pubkey, user: Pubkey, mint: Pubkey, amount: int, deci
     return [create, transfer]
 
 
+def transfer_checked_ix(source: Pubkey, mint: Pubkey, dest: Pubkey, owner: Pubkey,
+                        amount: int, decimals: int) -> Instruction:
+    return Instruction(TOKEN_PROGRAM, bytes([12]) + struct.pack("<Q", amount) + bytes([decimals]), [
+        AccountMeta(source, is_signer=False, is_writable=True),
+        AccountMeta(mint, is_signer=False, is_writable=False),
+        AccountMeta(dest, is_signer=False, is_writable=True),
+        AccountMeta(owner, is_signer=True, is_writable=False),
+    ])
+
+
 def initialize_config_ix(program_id: Pubkey, admin: Pubkey, attestor: Pubkey) -> Instruction:
     config = Pubkey.find_program_address([b"config"], program_id)[0]
     return Instruction(program_id, _discriminator("initialize_config") + bytes(attestor), [
@@ -200,6 +222,43 @@ class SolanaAttestor:
                               reward_mint=str(self.reward_mint) if amount else None)
         except (httpx.HTTPError, RuntimeError, KeyError, ValueError) as e:
             return Settlement(status="FAILED", network=self.network, detail=str(e)[:300])
+
+    def _blockhash(self) -> Hash:
+        return Hash.from_string(self._rpc("getLatestBlockhash", [{"commitment": "confirmed"}])["value"]["blockhash"])
+
+    def build_stake_tx(self, wallet: str, amount_base: int) -> bytes:
+        """Unsigned SPL transfer of the stake from the user to the pool. The user pays its fee and signs
+        it in their wallet; ATTEST only submits it if it is byte-for-byte the message built here."""
+        user = Pubkey.from_string(wallet)
+        ix = transfer_checked_ix(associated_token_address(user, self.reward_mint), self.reward_mint, self.pool,
+                                 user, amount_base, self.reward_decimals)
+        return bytes(Transaction.new_unsigned(Message.new_with_blockhash([ix], user, self._blockhash())))
+
+    def submit_stake(self, signed_tx: bytes, unsigned_tx: bytes) -> str:
+        tx, issued = Transaction.from_bytes(signed_tx), Transaction.from_bytes(unsigned_tx)
+        if tx.message != issued.message:
+            raise ValueError("signed transaction differs from the stake transaction ATTEST issued")
+        tx.verify()  # raises if the user's signature is missing or invalid
+        sig = self._rpc("sendTransaction", [base64.b64encode(bytes(tx)).decode(),
+                                            {"encoding": "base64", "preflightCommitment": "confirmed"}])
+        self.confirm(sig)
+        return sig
+
+    def faucet(self, wallet: str, lamports: int, amount_base: int) -> str:
+        """DEVELOPMENT ONLY: fund a test wallet with a little SOL (fees) and test tokens.
+        Works only while the attestor is the mint authority, i.e. never for real SKR."""
+        me, user = self.keypair.pubkey(), Pubkey.from_string(wallet)
+        ata = associated_token_address(user, self.reward_mint)
+        sol = Instruction(SYSTEM_PROGRAM_ID, struct.pack("<IQ", 2, lamports), [
+            AccountMeta(me, is_signer=True, is_writable=True), AccountMeta(user, is_signer=False, is_writable=True)])
+        create = reward_ixs(me, user, self.reward_mint, 0, self.reward_decimals)[0]
+        mint_to = Instruction(TOKEN_PROGRAM, bytes([7]) + struct.pack("<Q", amount_base), [
+            AccountMeta(self.reward_mint, is_signer=False, is_writable=True),
+            AccountMeta(ata, is_signer=False, is_writable=True),
+            AccountMeta(me, is_signer=True, is_writable=False)])
+        sig = self.send(sol, create, mint_to)
+        self.confirm(sig)
+        return sig
 
     def verify_deposit(self, signature: str) -> Deposit:
         """Read a confirmed transaction and return how much REWARD_MINT it moved into the pool."""

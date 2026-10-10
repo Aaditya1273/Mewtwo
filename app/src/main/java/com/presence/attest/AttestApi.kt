@@ -25,7 +25,23 @@ class AttestException(val reason: String, val detail: String = "") : Exception("
 
 @Serializable data class Health(val mode: String, val network: String, val settlement: String)
 
-@Serializable data class Reward(val xp: Int, val token: Double = 0.0, val symbol: String = "SKR", val funding: String? = null)
+@Serializable
+data class Reward(
+    val xp: Int,
+    val token: Double = 0.0,
+    val symbol: String = "SKR",
+    val funding: String? = null,
+    val stake: Double = 0.0,
+    val bonus: Double = 0.0,
+)
+
+@Serializable data class StakeTerms(val token: Double = 0.0, @SerialName("bonus_rate") val bonusRate: Double = 0.0)
+
+@Serializable data class StakeOffer(val amount: Double, val symbol: String, val transaction: String)
+
+@Serializable data class PoolInfo(val symbol: String, val forfeited: Double = 0.0, val remaining: Double = 0.0)
+
+@Serializable data class Pools(val missions: Map<String, PoolInfo> = emptyMap())
 
 @Serializable
 data class MissionPolicy(
@@ -40,6 +56,7 @@ data class MissionPolicy(
     @SerialName("min_interactions_per_checkpoint") val minInteractionsPerCheckpoint: Int,
     @SerialName("max_claims_per_identity_per_day") val maxClaimsPerDay: Int = 1,
     val reward: Reward,
+    val stake: StakeTerms = StakeTerms(),
     val sponsor: String = "",
     val why: String = "",
 )
@@ -51,6 +68,7 @@ data class SessionCreated(
     @SerialName("siws_message") val siwsMessage: String,
     val policy: MissionPolicy,
     val mode: String,
+    val stake: StakeOffer? = null,
 )
 
 @Serializable data class Authorized(val eligibility: String, @SerialName("sgt_mint") val sgtMint: String? = null)
@@ -122,8 +140,16 @@ class AttestApi @Inject constructor(@PublishedApi internal val http: HttpClient)
     suspend fun createSession(wallet: String, missionId: String, ephemeralPubkey: String): SessionCreated =
         post("/session", mapOf("wallet" to wallet, "mission_id" to missionId, "ephemeral_pubkey" to ephemeralPubkey))
 
-    suspend fun authorize(sessionId: String, signatureB58: String): Authorized =
-        post("/session/$sessionId/authorize", mapOf("signature" to signatureB58))
+    suspend fun authorize(sessionId: String, signatureB58: String, stakeTxB64: String?): Authorized =
+        post("/session/$sessionId/authorize",
+            mapOf("signature" to signatureB58) + (stakeTxB64?.let { mapOf("stake_transaction" to it) } ?: emptyMap()))
+
+    suspend fun pools(): Pools = get("/sponsor/pools")
+
+    /** DEVELOPMENT ONLY (server refuses on mainnet): fee SOL + test tokens for a new test wallet. */
+    suspend fun faucet(wallet: String) {
+        call { http.post("$base/dev/faucet") { jsonBody(json.encodeToString(mapOf("wallet" to wallet))) } }
+    }
 
     suspend fun checkpoint(sessionId: String, body: CheckpointBody) {
         call { http.post("$base/session/$sessionId/checkpoint") { jsonBody(json.encodeToString(body)) } }

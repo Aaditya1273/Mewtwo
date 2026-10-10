@@ -74,15 +74,19 @@ fun MissionScreen(s: UiState, onBack: () -> Unit, onStart: () -> Unit) = Page {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Stat("Assurance", assuranceLabel(m.requiredAssurance))
         Stat("Duration", "${m.durationSeconds} seconds")
-        Stat("Reward", "+${m.reward.xp} XP" + if (m.reward.token > 0) " · ${formatToken(m.reward.token)} ${m.reward.symbol}" else "")
+        if (m.stake.token > 0) Stat("Stake", "${formatToken(m.stake.token)} ${m.reward.symbol}")
+        else Stat("Reward", "+${m.reward.xp} XP")
     }
     Gap(22)
     Eyebrow("What PRESENCE verifies")
     Gap(10)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Guarantee("This device", "Your wallet signs a one-time server code. On Seeker, one device = one claim a day.")
-        Guarantee("This process", "Every 10 s a signed, chained checkpoint. The server times it, not your phone.")
-        Guarantee("On-chain", "If it passes, a permanent attestation is written to Solana.")
+        if (m.stake.token > 0) Guarantee("Skin in the game",
+            "Finish: your ${formatToken(m.stake.token)} ${m.reward.symbol} back + ${(m.stake.bonusRate * 100).toInt()}% from the pool. " +
+                "Quit: it feeds the pool for everyone who finished.")
+        Guarantee("Cheat-proof timer", "The server times the session and checks for a human at random moments. No local timer to fake.")
+        Guarantee("One Seeker, one clock-in", "Your wallet signs a one-time server code; on Seeker, one device = one claim.")
+        Guarantee("On-chain", "Every finished session is a permanent attestation on Solana, paid in the same transaction.")
     }
 
     Gap(8)
@@ -92,12 +96,18 @@ fun MissionScreen(s: UiState, onBack: () -> Unit, onStart: () -> Unit) = Page {
         Checkbox(checked = consent, onCheckedChange = { consent = it },
             colors = CheckboxDefaults.colors(checkedColor = Ink.Text, checkmarkColor = Ink.Bg, uncheckedColor = Ink.Muted))
         Text(
-            "For ${m.durationSeconds} seconds only, PRESENCE records whether this screen stays in the foreground " +
-                "and how many times you confirm. No location, no sensor streams, no background tracking. " +
-                "Only a hash of this evidence is anchored on-chain.",
+            (if (m.stake.token > 0) "I stake ${formatToken(m.stake.token)} ${m.reward.symbol}, which I lose if I leave or miss a check. " else "") +
+                "During the session PRESENCE records only whether it stays on screen and when I answer. " +
+                "No location, no sensors, no background tracking; only a hash goes on-chain.",
             style = MaterialTheme.typography.bodyMedium, color = Ink.Muted,
         )
     }
     Gap(16)
-    PrimaryButton(if (s.busy) "Waiting for wallet…" else "Start mission", enabled = consent && !s.busy, onClick = onStart)
+    PrimaryButton(
+        when {
+            s.busy -> "Waiting for wallet…"
+            m.stake.token > 0 -> "Stake ${formatToken(m.stake.token)} & clock in"
+            else -> "Clock in"
+        },
+        enabled = consent && !s.busy, onClick = onStart)
 }

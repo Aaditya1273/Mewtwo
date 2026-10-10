@@ -1,6 +1,8 @@
 package com.presence.session
 
 import android.os.SystemClock
+import android.util.Base64
+import com.presence.ui.screens.formatToken
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -60,9 +62,11 @@ class PresenceViewModel @Inject constructor(
             val health = api.health()
             val missions = api.missions()
             val profile = wallet.account?.let { api.profile(it.address) }
+            val pools = runCatching { api.pools().missions }.getOrDefault(emptyMap())
             _state.update { s ->
                 val selected = missions.firstOrNull { m -> m.missionId == s.mission?.missionId } ?: missions.firstOrNull()
-                s.copy(health = health, missions = missions, mission = selected, profile = profile, backendError = null)
+                s.copy(health = health, missions = missions, mission = selected, profile = profile, pools = pools,
+                    backendError = null)
             }
         } catch (e: CancellationException) {
             throw e
@@ -75,7 +79,19 @@ class PresenceViewModel @Inject constructor(
         guarded {
             val account = wallet.connect(sender)
             _state.update { it.copy(wallet = account) }
+            // Off mainnet, give a fresh test wallet fee SOL and test tokens so it can stake (server-side guarded).
+            ensureTestFunds(account.address)
             refresh()
+        }
+    }
+
+    /** Off mainnet only: one faucet grant (fee SOL + test tokens) per wallet; the server enforces both. */
+    private suspend fun ensureTestFunds(address: String) {
+        if (_state.value.health?.network == "mainnet") return
+        try {
+            api.faucet(address)
+        } catch (e: AttestException) {
+            log(null, "faucet", e.reason)
         }
     }
 
@@ -125,11 +141,16 @@ class PresenceViewModel @Inject constructor(
         missionJob?.cancel()
         missionJob = viewModelScope.launch {
             val key = EphemeralKey.create()
+            var staked: String? = null
             try {
                 _state.update { it.copy(busy = true) }
+                if (mission.stake.token > 0) ensureTestFunds(account.address)
                 val session = api.createSession(account.address, mission.missionId, key.publicKeyB64)
-                val signature = wallet.signMessage(sender, session.siwsMessage)
-                val auth = api.authorize(session.sessionId, Base58.encodeToString(signature))
+                val stakeTx = session.stake?.let { Base64.decode(it.transaction, Base64.NO_WRAP) }
+                val (signature, stakeSigned) = wallet.signSession(sender, session.siwsMessage, stakeTx)
+                val auth = api.authorize(session.sessionId, Base58.encodeToString(signature),
+                    stakeSigned?.let { Base64.encodeToString(it, Base64.NO_WRAP) })
+                staked = session.stake?.let { "${formatToken(it.amount)} ${it.symbol}" }
                 log(session.sessionId, "authorized", auth.eligibility)
                 _state.update { it.copy(busy = false) }
 
@@ -181,7 +202,9 @@ class PresenceViewModel @Inject constructor(
             } catch (e: Exception) {
                 val err = e as? AttestException ?: AttestException("CLIENT_ERROR", e.javaClass.simpleName)
                 log(null, "failed", err.reason)
-                _state.update { it.copy(busy = false, screen = Screen.Failed(err.reason, err.detail)) }
+                // A stake is only lost if the session got past authorize (the server forfeits it).
+                val lost = staked.takeIf { err.reason !in setOf("STAKE_REQUIRED", "STAKE_FAILED", "NETWORK_ERROR", "WALLET_REJECTED") }
+                _state.update { it.copy(busy = false, screen = Screen.Failed(err.reason, err.detail, lost)) }
             } finally {
                 key.destroy()
             }
@@ -196,8 +219,8 @@ class PresenceViewModel @Inject constructor(
         windowForeground = true
         anyBackground = false
         var done = 0
-        // Each window's presence check appears at an unpredictable moment, 1.5–6 s into the window.
-        val promptAt = List(policy.requiredCheckpoints) { 1500L + (Math.random() * 4500).toLong() }
+        // Each window's presence check appears at an unpredictable moment, 15-60% into the window.
+        val promptAt = List(policy.requiredCheckpoints) { (intervalMs * (0.15 + Math.random() * 0.45)).toLong() }
         sessionStart = start
         intervalMsRunning = intervalMs
         promptAtRunning = promptAt
